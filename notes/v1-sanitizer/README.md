@@ -46,3 +46,16 @@ The user downloads free ebooks and worries they carry malware. They chose a clea
 - **PyMuPDF is AGPL-3.0.** Pick a licence before publishing.
 - **The image is 623 MB.**
 - **Not done:** the `~/.local/bin` symlink (the user can add it; see the README).
+
+## Speed findings (2026-11-10)
+
+- Per page on one core (Alice, 150 DPI): OCR 2.56 s (94%), page compression 0.15 s, drawing 0.02 s, all Python code 0.009 s (0.3%). Saving a 390-page PDF: 0.6 s in total.
+- Python is not the bottleneck. OCR is. The user accepted the current speed.
+- Ideas if speed matters later: Tesseract "fast" model (not measured), 10 workers instead of 8, or taking text from the original instead of OCR (exact and fast, but hidden text can differ from the picture).
+
+## Optional idea: run without Docker (not planned)
+
+- Option B: rebuild the tool on WebAssembly (MuPDF.js + tesseract.js) as a normal app or an offline web page. No Docker, no VM, no admin rights.
+- Only worth it if the tool is given to non-technical users. Decision on 2026-11-10: keep the Docker version as the product.
+- Before any rewrite: a one or two-day spike that renders one PDF page with MuPDF.js, rebuilds it and measures speed.
+- Reference: Dangerzone 0.10.0 bundles Podman so its users skip Docker Desktop (https://dangerzone.rocks/news/2025-12-02-0.10.0/).
