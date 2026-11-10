@@ -1,11 +1,11 @@
-"""Stage 1, inside the sandbox: draw every page of an untrusted book as pixels.
+"""Stage 1, inside the sandbox: draw every page of an untrusted document as pixels.
 
-Input:  the book's bytes on stdin.
+Input:  the document's bytes on stdin.
 Output: the pixel stream described in protocol.py, on stdout.
 Usage:  python -I render.py <kind> <dpi>
 
-This is the only code that ever parses the untrusted book. Assume a bad
-book can take it over. The container around it has no network, no shared
+This is the only code that ever parses the untrusted document. Assume a bad
+document can take it over. The container around it has no network, no shared
 folders and no root, and the host checks every number this stage sends.
 """
 
@@ -20,7 +20,7 @@ import pymupdf  # noqa: E402
 KINDS = {"pdf", "epub", "mobi", "fb2", "cbz"}
 MAX_INPUT = 1024 * 1024 * 1024  # 1 GiB
 
-# Page layout for reflowing books (EPUB, MOBI, FB2), in points.
+# Page layout for reflowing ebooks (EPUB, MOBI, FB2), in points.
 # These match MuPDF's own defaults and read well on a laptop screen.
 REFLOW_WIDTH = 450
 REFLOW_HEIGHT = 600
@@ -51,21 +51,21 @@ def main():
 
     data = sys.stdin.buffer.read(MAX_INPUT + 1)
     if len(data) > MAX_INPUT:
-        fail("the book is larger than 1 GiB")
+        fail("the file is larger than 1 GiB")
 
     try:
         doc = pymupdf.open(stream=data, filetype=kind)
     except Exception as e:  # MuPDF raises many types for broken files
-        fail(f"cannot open the book: {e}")
+        fail(f"cannot open the document: {e}")
 
     if doc.needs_pass:
-        fail("the book is password-protected")
+        fail("the document is password-protected")
     if doc.is_reflowable:
         doc.layout(width=REFLOW_WIDTH, height=REFLOW_HEIGHT, fontsize=REFLOW_FONT_SIZE)
 
     pages = doc.page_count
     if not 1 <= pages <= protocol.MAX_PAGES:
-        fail(f"the book has {pages} pages; the limit is 1 to {protocol.MAX_PAGES}")
+        fail(f"the document has {pages} pages; the limit is 1 to {protocol.MAX_PAGES}")
 
     out = sys.stdout.buffer
     out.write(protocol.pack_header(pages))

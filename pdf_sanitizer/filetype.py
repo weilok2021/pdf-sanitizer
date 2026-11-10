@@ -1,8 +1,8 @@
 """Find out what a file really is, from its bytes, not its name.
 
-This is the one scanner check that ebook-sanitizer keeps. It catches the most
-common trick: a program or shortcut dressed up as a book. It never opens
-the book itself. Only the sandbox does that.
+This is the one scanner check that pdf-sanitizer keeps. It catches the most
+common trick: a program or shortcut dressed up as a document. It never opens
+the document itself. Only the sandbox does that.
 """
 
 import os
@@ -26,7 +26,7 @@ RISKY_ENDINGS = {
     ".reg", ".iso", ".img", ".vhd", ".vhdx", ".appx", ".msix", ".chm",
 }
 
-# The ending a user expects to see on a book.
+# The ending a user expects to see on a document.
 BOOK_ENDINGS = {".pdf", ".epub", ".mobi", ".azw", ".azw3", ".fb2", ".cbz", ".djvu", ".txt"}
 
 IMAGE_ENDINGS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
@@ -54,7 +54,7 @@ def _reject(what, reason, warnings):
 
 
 def _accept(kind, warnings, extra=None):
-    reason = "Real book file. It can be sanitized."
+    reason = "Real document. It can be sanitized."
     if extra:
         reason = f"{reason} {extra}"
     return Verdict(True, kind, BOOK_KINDS[kind], reason, warnings)
@@ -96,8 +96,6 @@ def _program_kind(head):
         return "script"
     if head[:8] == b"\x4c\x00\x00\x00\x01\x14\x02\x00":
         return "Windows shortcut (.lnk)"
-    if head[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
-        return "Windows installer or old Office file (.msi, .doc, .xls)"
     if head[:4] == b"ITSF":
         return "Windows help file (.chm), which can run scripts"
     return None
@@ -147,6 +145,8 @@ def _inspect_zip(path, warnings):
                     f"It hides programs or shortcuts ({shown}). Delete it.",
                     warnings,
                 )
+            if "[Content_Types].xml" in names and any(n.startswith(("word/", "xl/", "ppt/")) for n in names):
+                return _reject("Word, Excel or PowerPoint file", "Office files are not supported yet.", warnings)
             mimetype = next((i for i in infos if i.filename == "mimetype"), None)
             if mimetype is not None and mimetype.file_size <= 100:
                 if zf.read(mimetype).strip() == b"application/epub+zip":
@@ -160,7 +160,7 @@ def _inspect_zip(path, warnings):
             shown = ", ".join(names[:5]) or "nothing"
             return _reject(
                 "ZIP archive",
-                f"It is an archive, not a book. It contains: {shown}.",
+                f"It is an archive, not a document. It contains: {shown}.",
                 warnings,
             )
     except (zipfile.BadZipFile, OSError, ValueError, RuntimeError, NotImplementedError):
@@ -186,11 +186,21 @@ def inspect(path):
         claimed = _ending(name)
         if claimed in BOOK_ENDINGS:
             warnings.append(f"The name pretends to be '{claimed}'.")
-        return _reject(program, "It is a program, not a book. Do not open it. Delete it.", warnings)
+        return _reject(program, "It is a program, not a document. Do not open it. Delete it.", warnings)
+
+    # Old Office files and Windows installers share one container format.
+    if head[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        if _ending(name) in BOOK_ENDINGS:
+            warnings.append(f"The name pretends to be '{_ending(name)}'.")
+        return _reject(
+            "old Office file or Windows installer (.doc, .xls, .ppt, .msi)",
+            "Office files are not supported yet. If it is an .msi installer, do not run it.",
+            warnings,
+        )
 
     archive = _archive_kind(head)
     if archive:
-        return _reject(archive, "It is an archive or disk image, not a book.", warnings)
+        return _reject(archive, "It is an archive or disk image, not a document.", warnings)
 
     # ZIP comes before PDF: a ZIP that stores a PDF uncompressed also has
     # "%PDF-" near its start, and must not pass as a plain PDF.
@@ -202,7 +212,7 @@ def inspect(path):
     if b"%PDF-" in head[:1024]:
         kind = "pdf"
     elif head[:8] == b"AT&TFORM":
-        return _reject("DjVu book", "DjVu is not supported yet.", warnings)
+        return _reject("DjVu document", "DjVu is not supported yet.", warnings)
     elif len(head) >= 68 and head[60:68] in (b"BOOKMOBI", b"TEXtREAd"):
         if _mobi_version(head) >= 8:
             return _reject(
@@ -218,7 +228,7 @@ def inspect(path):
     elif _looks_like_markup(head, b"<svg"):
         return _reject("SVG image", "It is an SVG image, which can run scripts in your browser.", warnings)
     else:
-        return _reject("unknown file type", "It is not a book format ebook-sanitizer knows.", warnings)
+        return _reject("unknown file type", "It is not a format pdf-sanitizer knows.", warnings)
 
     _note_mismatch(name, kind, warnings)
     return _accept(kind, warnings)

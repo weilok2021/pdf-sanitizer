@@ -1,4 +1,4 @@
-"""Integration tests. They need Docker and a built sandbox (`ebook-sanitizer setup`).
+"""Integration tests. They need Docker and a built sandbox (`pdf-sanitizer setup`).
 
 They prove three things:
   1. The sandbox walls hold: no network, no root, no host files, limits set.
@@ -15,16 +15,16 @@ import tempfile
 import unittest
 from unittest import mock
 
-from ebook_sanitizer import sandbox
+from pdf_sanitizer import sandbox
 from tests import fixtures
 
 TAG = sandbox.image_tag()
 READY = sandbox.docker_available() and sandbox.image_exists(TAG)
-SKIP_REASON = "needs Docker and a built sandbox: run ./ebook-sanitizer setup"
+SKIP_REASON = "needs Docker and a built sandbox: run ./pdf-sanitizer setup"
 
 
 def run_in_sandbox(code, stdin=b""):
-    name = f"ebook-sanitizer-test-{secrets.token_hex(4)}"
+    name = f"pdf-sanitizer-test-{secrets.token_hex(4)}"
     command = sandbox.sandbox_command(name, TAG, ["python", "-I", "-c", code])
     return subprocess.run(command, input=stdin, capture_output=True, timeout=180)
 

@@ -1,8 +1,8 @@
-"""The ebook-sanitizer command.
+"""The pdf-sanitizer command.
 
-    ebook-sanitizer setup            build the sandbox (needs internet once)
-    ebook-sanitizer check FILE...    say what each file really is; opens nothing
-    ebook-sanitizer FILE...          make a safe PDF copy of each book
+    pdf-sanitizer setup            build the sandbox (needs internet once)
+    pdf-sanitizer check FILE...    say what each file really is; opens nothing
+    pdf-sanitizer FILE...          make a safe PDF copy of each document
 """
 
 import argparse
@@ -19,12 +19,12 @@ MAX_INPUT = 1024 * 1024 * 1024  # 1 GiB, the same limit as the sandbox
 
 USAGE = """\
 usage:
-  ebook-sanitizer setup              build the sandbox (needs internet once)
-  ebook-sanitizer check FILE...      say what each file really is; opens nothing
-  ebook-sanitizer [options] FILE...  make a safe PDF copy of each book
+  pdf-sanitizer setup              build the sandbox (needs internet once)
+  pdf-sanitizer check FILE...      say what each file really is; opens nothing
+  pdf-sanitizer [options] FILE...  make a safe PDF copy of each document
 
 options:
-  -o, --out-dir DIR   where to save the safe copies (default: next to each book)
+  -o, --out-dir DIR   where to save the safe copies (default: next to each document)
   --dpi N             picture sharpness, 72 to 300 (default: 150)
   --no-ocr            skip OCR; faster, but the text is not searchable
   --lang CODE         OCR language (default: eng)
@@ -34,7 +34,7 @@ options:
 
 
 def _parse_sanitize(argv):
-    parser = argparse.ArgumentParser(prog="ebook-sanitizer", add_help=False, usage=USAGE)
+    parser = argparse.ArgumentParser(prog="pdf-sanitizer", add_help=False, usage=USAGE)
     parser.add_argument("files", nargs="+")
     parser.add_argument("-o", "--out-dir")
     parser.add_argument("--dpi", type=int, default=150)
@@ -82,7 +82,7 @@ def cmd_setup():
     old = sandbox.remove_old_images(tag)
     if old:
         _say(f"Removed {len(old)} old sandbox image(s).")
-    _say("Done. You can now sanitize books.")
+    _say("Done. You can now sanitize documents.")
     return 0
 
 
@@ -93,7 +93,7 @@ def _progress(number, total):
 
 
 def _sanitize_one(path, args, made):
-    """Sanitize one book. `made` holds the safe copies this run has written."""
+    """Sanitize one document. `made` holds the safe copies this run has written."""
     verdict = filetype.inspect(path)
     _report(path, verdict)
     if not verdict.ok:
@@ -149,7 +149,7 @@ def cmd_sanitize(argv):
         return 1
     if not sandbox.image_exists(sandbox.image_tag()):
         _say("The sandbox is not built yet, or the code changed since it was built.")
-        _say("Run: ebook-sanitizer setup")
+        _say("Run: pdf-sanitizer setup")
         return 1
 
     results = []

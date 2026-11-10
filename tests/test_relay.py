@@ -3,8 +3,8 @@
 import io
 import unittest
 
-from ebook_sanitizer import protocol, sandbox
-from ebook_sanitizer.text import safe, safe_log
+from pdf_sanitizer import protocol, sandbox
+from pdf_sanitizer.text import safe, safe_log
 
 
 def stream(pages, sizes, pixel_bytes=None, extra=b""):

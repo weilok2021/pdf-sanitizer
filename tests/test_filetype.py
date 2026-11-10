@@ -5,7 +5,7 @@ import tempfile
 import unittest
 import zipfile
 
-from ebook_sanitizer import filetype
+from pdf_sanitizer import filetype
 from tests import fixtures
 
 
@@ -148,6 +148,16 @@ class FileTypeTest(unittest.TestCase):
         for name, data in samples.items():
             with self.subTest(name=name):
                 self.assertFalse(filetype.inspect(self.make(name, data)).ok)
+
+    def test_office_files_are_not_supported_yet(self):
+        docx = self.make_zip("report.docx", {"[Content_Types].xml": b"<x/>", "word/document.xml": b"<x/>"})
+        old_doc = self.make("report.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 60)
+        for path in (docx, old_doc):
+            with self.subTest(path=os.path.basename(path)):
+                verdict = filetype.inspect(path)
+                self.assertFalse(verdict.ok)
+                self.assertIn("Office files are not supported yet", verdict.reason)
+                self.assertNotIn("program", verdict.reason)
 
     def test_djvu_is_not_supported_yet(self):
         verdict = filetype.inspect(self.make("scan.djvu", b"AT&TFORM\0\0\0\0DJVM"))

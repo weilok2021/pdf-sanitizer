@@ -1,16 +1,16 @@
-# v1: ebook-sanitizer
+# v1: pdf-sanitizer (first named ebook-sanitizer)
 
 Built 2026-11-10. Claude wrote the code; the user reviews it. Per the global CLAUDE.md, it stays off the user's portfolio unless the user says otherwise.
 
 ## Why
 
-The user downloads free ebooks and worries they carry malware. They chose a cleaner over a scanner: a scanner only spots attacks it already knows, while a cleaner rebuilds the book from pictures, so no code can survive.
+The user downloads free ebooks and worries they carry malware. They chose a cleaner over a scanner: a scanner only spots attacks it already knows, while a cleaner rebuilds the document from pictures, so no code can survive. Renamed from ebook-sanitizer to pdf-sanitizer on 2026-11-10, because it works on any PDF, not only ebooks.
 
 ## What v1 does
 
-- `ebook-sanitizer check FILE`: reads the first bytes and says what the file really is. It refuses programs, shortcuts, archives, web pages and AZW3. It flags double endings, padded names and direction-control characters.
-- `ebook-sanitizer FILE`: renders each page in sandbox 1, checks the pixels on the host, rebuilds a PDF with OCR in sandbox 2, and saves `<name>.safe.pdf`.
-- `ebook-sanitizer setup`: builds the sandbox image and deletes old ones.
+- `pdf-sanitizer check FILE`: reads the first bytes and says what the file really is. It refuses programs, shortcuts, archives, web pages and AZW3. It flags double endings, padded names and direction-control characters.
+- `pdf-sanitizer FILE`: renders each page in sandbox 1, checks the pixels on the host, rebuilds a PDF with OCR in sandbox 2, and saves `<name>.safe.pdf`.
+- `pdf-sanitizer setup`: builds the sandbox image and deletes old ones.
 
 ## Decisions
 
@@ -21,7 +21,7 @@ The user downloads free ebooks and worries they carry malware. They chose a clea
 - **OCR runs on the colour picture.** MuPDF's OCR finds no text in a grey picture. For a grey page, the picture data is then overwritten in place with the grey version, which cuts about 45% per text page.
 - **JPEG was tested and rejected.** It made text pages bigger than Flate.
 - **OCR runs in up to 8 worker processes** (forkserver, `OMP_THREAD_LIMIT=1`). Alice dropped from 217 s to 55 s.
-- **A book whose pages all come out pure white is a failure.** This catches books the reader cannot really read. AZW3 did exactly this before the check refused it.
+- **A document whose pages all come out pure white is a failure.** This catches files the reader cannot really read. AZW3 did exactly this before the check refused it.
 
 ## Measured (12-core PC, 150 DPI, OCR on)
 

@@ -1,10 +1,10 @@
 """Run the two sandbox stages and pass checked pixels between them.
 
-    book ──► [render container] ──pixels──► host checks ──► [rebuild container] ──► PDF
+    document ──► [render container] ──pixels──► host checks ──► [rebuild container] ──► PDF
 
 Both containers run with no network, no shared folders, a read-only file
 system, no root, no Linux capabilities, and memory and process limits.
-The book goes in through stdin. Pixels and the finished PDF come out
+The document goes in through stdin. Pixels and the finished PDF come out
 through stdout. Nothing else crosses the boundary.
 """
 
@@ -20,13 +20,13 @@ from . import protocol
 from .text import safe_log
 
 ROOT = Path(__file__).resolve().parent.parent
-IMAGE_REPO = "ebook-sanitizer-sandbox"
+IMAGE_REPO = "pdf-sanitizer-sandbox"
 # The image tag is a hash of these files, so a code change forces a rebuild.
 IMAGE_FILES = (
     "container/Dockerfile",
     "container/render.py",
     "container/rebuild.py",
-    "ebook_sanitizer/protocol.py",
+    "pdf_sanitizer/protocol.py",
 )
 MEMORY = "2g"
 PIDS = "128"
@@ -35,7 +35,7 @@ STDERR_CAP = 64 * 1024
 
 
 class SanitizeError(Exception):
-    """The book could not be sanitized. The message is safe to print."""
+    """The document could not be sanitized. The message is safe to print."""
 
 
 def image_tag():
@@ -102,7 +102,7 @@ class Stage:
     """One running sandbox container."""
 
     def __init__(self, label, tag, argv):
-        self.name = f"ebook-sanitizer-{label}-{secrets.token_hex(6)}"
+        self.name = f"pdf-sanitizer-{label}-{secrets.token_hex(6)}"
         self.proc = subprocess.Popen(
             sandbox_command(self.name, tag, argv),
             stdin=subprocess.PIPE,
@@ -184,7 +184,7 @@ def relay(src, dst, on_page=None, touch=None):
 
     The host writes a fresh header and fresh page sizes from the checked
     values. It copies only the pixel bytes as they are. It also counts pure
-    white pages, so a book the sandbox could not really read is caught.
+    white pages, so a document the sandbox could not really read is caught.
     """
     pages = protocol.read_header(src)
     dst.write(protocol.pack_header(pages))
@@ -243,7 +243,7 @@ def rebuild_argv(dpi, ocr, language):
 
 
 def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeout=300, on_page=None):
-    """Turn the book at src_path into a safe PDF written to out_file.
+    """Turn the document at src_path into a safe PDF written to out_file.
 
     Return an Outcome. Raise SanitizeError on any failure.
     """
@@ -278,9 +278,9 @@ def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeou
                 render_code = None
             kill_all()
             if render_code not in (0, None):
-                raise SanitizeError(_explain(render, "The sandbox could not open the book.")) from None
+                raise SanitizeError(_explain(render, "The sandbox could not open the document.")) from None
             raise SanitizeError(
-                f"The sandbox sent malformed page data ({e}). The book may be malicious. Delete it."
+                f"The sandbox sent malformed page data ({e}). The file may be malicious. Delete it."
             ) from None
         except (BrokenPipeError, OSError):
             kill_all()
@@ -294,12 +294,12 @@ def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeou
         if watchdog.fired:
             raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.")
         if render_code != 0:
-            raise SanitizeError(_explain(render, "The sandbox could not open the book."))
+            raise SanitizeError(_explain(render, "The sandbox could not open the document."))
         if rebuild_code != 0:
             raise SanitizeError(_explain(rebuild, "The rebuild step failed."))
         if outcome.blank_pages == outcome.pages:
             raise SanitizeError(
-                "Every page came out blank, so the sandbox could not really read this book."
+                "Every page came out blank, so the sandbox could not really read this document."
             )
         return outcome
     finally:

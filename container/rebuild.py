@@ -5,7 +5,7 @@ Input:  the pixel stream described in protocol.py, on stdin. The host has
 Output: the finished PDF on stdout.
 Usage:  python -I rebuild.py <dpi> <ocr|no-ocr> <language>
 
-This stage never sees the original book. Each page of the new PDF is one
+This stage never sees the original document. Each page of the new PDF is one
 picture, plus invisible OCR text when OCR is on, so you can still search
 and select the text. OCR is slow, so it runs on several pages at once in
 worker processes, and the pages are put back in order.
