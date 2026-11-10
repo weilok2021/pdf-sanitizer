@@ -3,6 +3,8 @@
     pdf-sanitizer setup            build the sandbox (needs internet once)
     pdf-sanitizer check FILE...    say what each file really is; opens nothing
     pdf-sanitizer FILE...          make a safe PDF copy of each document
+    pdf-sanitizer install-menu     add "Send to > Sanitize document" to Windows
+    pdf-sanitizer remove-menu      remove it again
 """
 
 import argparse
@@ -12,7 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import filetype, sandbox
+from . import filetype, sandbox, windows
 from .text import safe
 
 MAX_INPUT = 1024 * 1024 * 1024  # 1 GiB, the same limit as the sandbox
@@ -22,6 +24,9 @@ usage:
   pdf-sanitizer setup              build the sandbox (needs internet once)
   pdf-sanitizer check FILE...      say what each file really is; opens nothing
   pdf-sanitizer [options] FILE...  make a safe PDF copy of each document
+  pdf-sanitizer install-menu       add "Send to > Sanitize document" to the
+                                   Windows right-click menu
+  pdf-sanitizer remove-menu        remove it again
 
 options:
   -o, --out-dir DIR   where to save the safe copies (default: next to each document)
@@ -30,6 +35,9 @@ options:
   --lang CODE         OCR language (default: eng)
   --timeout SECONDS   stop when nothing happens for this long (default: 300)
   --force             replace a safe copy that already exists
+
+The menu entry adds --from-windows (the files are Windows paths) and
+--pause (keep the window open until you press Enter).
 """
 
 
@@ -42,6 +50,8 @@ def _parse_sanitize(argv):
     parser.add_argument("--lang", default="eng")
     parser.add_argument("--timeout", type=int, default=300)
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--from-windows", action="store_true")
+    parser.add_argument("--pause", action="store_true")
     args = parser.parse_args(argv)
     if not 72 <= args.dpi <= 300:
         parser.error("--dpi must be between 72 and 300")
@@ -54,8 +64,9 @@ def _say(line=""):
     print(line, flush=True)
 
 
-def _report(path, verdict):
-    _say(f"{safe(path)}: {verdict.what}")
+def _report(shown, verdict):
+    """shown: the file's name, already made safe to print."""
+    _say(f"{shown}: {verdict.what}")
     for warning in verdict.warnings:
         _say(f"  warning: {warning}")
     _say(f"  {verdict.reason}")
@@ -65,7 +76,7 @@ def cmd_check(paths):
     all_ok = True
     for path in paths:
         verdict = filetype.inspect(path)
-        _report(path, verdict)
+        _report(safe(path), verdict)
         all_ok = all_ok and verdict.ok
     return 0 if all_ok else 1
 
@@ -86,6 +97,13 @@ def cmd_setup():
     return 0
 
 
+def _shown(path, args):
+    """The path as the user knows it: Windows style when they came from Windows."""
+    if args.from_windows:
+        return safe(windows.to_windows_path(path))
+    return safe(str(path))
+
+
 def _progress(number, total):
     if sys.stderr.isatty():
         end = "\n" if number == total else ""
@@ -95,7 +113,7 @@ def _progress(number, total):
 def _sanitize_one(path, args, made):
     """Sanitize one document. `made` holds the safe copies this run has written."""
     verdict = filetype.inspect(path)
-    _report(path, verdict)
+    _report(_shown(path, args), verdict)
     if not verdict.ok:
         return False
     if os.path.getsize(path) > MAX_INPUT:
@@ -106,10 +124,10 @@ def _sanitize_one(path, args, made):
     out_dir = Path(args.out_dir) if args.out_dir else src.parent
     final = out_dir / f"{src.stem}.safe.pdf"
     if final in made:
-        _say(f"  Skipped: this run already made {safe(str(final))} from another file with the same name.")
+        _say(f"  Skipped: this run already made {_shown(final, args)} from another file with the same name.")
         return False
     if final.exists() and not args.force:
-        _say(f"  Skipped: {safe(str(final))} already exists. Use --force to replace it.")
+        _say(f"  Skipped: {_shown(final, args)} already exists. Use --force to replace it.")
         return False
 
     part = out_dir / f".{src.stem}.{secrets.token_hex(4)}.part"
@@ -135,7 +153,7 @@ def _sanitize_one(path, args, made):
     made.add(final)
     size_mb = final.stat().st_size / (1024 * 1024)
     seconds = time.monotonic() - started
-    _say(f"  Safe copy: {safe(str(final))} ({outcome.pages} pages, {size_mb:.1f} MB, {seconds:.0f} s)")
+    _say(f"  Safe copy: {_shown(final, args)} ({outcome.pages} pages, {size_mb:.1f} MB, {seconds:.0f} s)")
     return True
 
 
@@ -156,6 +174,13 @@ def cmd_sanitize(argv):
     made = set()
     try:
         for path in args.files:
+            if args.from_windows:
+                try:
+                    path = windows.to_wsl_path(path)
+                except windows.IntegrationError as e:
+                    _say(f"{safe(path)}: {e}")
+                    results.append(False)
+                    continue
             results.append(_sanitize_one(path, args, made))
             _say()
     except KeyboardInterrupt:
@@ -165,6 +190,44 @@ def cmd_sanitize(argv):
     done = sum(results)
     _say(f"{done} of {len(results)} sanitized.")
     return 0 if all(results) else 1
+
+
+def cmd_install_menu():
+    if not windows.in_wsl():
+        _say("The right-click menu needs Windows with WSL, and this is not WSL.")
+        return 1
+    entry = Path(__file__).resolve().parent.parent / "pdf-sanitizer"
+    try:
+        path = windows.install_shortcut(entry, os.environ["WSL_DISTRO_NAME"])
+    except windows.IntegrationError as e:
+        _say(f"Could not add the menu entry: {e}")
+        return 1
+    _say("Added. In File Explorer, right-click a file, then choose")
+    _say("  Send to > Sanitize document")
+    _say("On Windows 11, Send to is under 'Show more options' (or hold Shift while you right-click).")
+    _say("Docker Desktop must be running when you use it.")
+    _say(f"Shortcut: {safe(path)}")
+    return 0
+
+
+def cmd_remove_menu():
+    if not windows.in_wsl():
+        _say("The right-click menu needs Windows with WSL, and this is not WSL.")
+        return 1
+    try:
+        path = windows.remove_shortcut()
+    except windows.IntegrationError as e:
+        _say(f"Could not remove the menu entry: {e}")
+        return 1
+    _say(f"Removed {safe(path)}" if path else "The menu entry was not there.")
+    return 0
+
+
+def _wait_for_enter():
+    try:
+        input("\nPress Enter to close this window.")
+    except (EOFError, KeyboardInterrupt):
+        pass
 
 
 def main(argv):
@@ -178,4 +241,20 @@ def main(argv):
             print(USAGE, end="")
             return 2
         return cmd_check(argv[1:])
-    return cmd_sanitize(argv)
+    if argv[0] == "install-menu":
+        return cmd_install_menu()
+    if argv[0] == "remove-menu":
+        return cmd_remove_menu()
+    if "--pause" not in argv:
+        return cmd_sanitize(argv)
+    # Opened from the Windows menu: keep the window open, even after a crash,
+    # so the user can read what happened.
+    try:
+        return cmd_sanitize(argv)
+    except Exception:
+        import traceback
+
+        traceback.print_exc()
+        return 1
+    finally:
+        _wait_for_enter()

@@ -69,6 +69,26 @@ Your Windows Downloads folder is at `/mnt/c/Users/<your Windows name>/Downloads`
 | `--timeout SECONDS` | Stop when nothing happens for this long. Default 300. |
 | `--force` | Replace a safe copy that already exists. |
 
+## Right-click menu (Windows)
+
+Sanitize files from File Explorer without typing:
+
+```
+./pdf-sanitizer install-menu
+```
+
+Then, in File Explorer:
+
+1. Right-click one or more files.
+2. On Windows 11, choose **Show more options** (or hold Shift while you right-click).
+3. Choose **Send to → Sanitize document**.
+
+A window shows the progress. Each safe copy appears next to its original. Press Enter to close the window.
+
+To take the entry away again: `./pdf-sanitizer remove-menu`.
+
+How it works: the entry is a Windows shortcut in your Send to folder. It starts `wsl.exe` directly, which runs pdf-sanitizer with the chosen files. File names never pass through `cmd.exe` or a `.bat` file, so a crafted name such as `a&mkdir PWNED&.pdf` cannot run a command. A test checks exactly this.
+
 ## Formats
 
 | Format | Status |
@@ -127,6 +147,7 @@ OCR takes most of the time. Without OCR, the Alice EPUB took 10 s.
 | `pdf_sanitizer/text.py` | Makes file names and error messages safe to print in a terminal. |
 | `container/render.py` | Sandbox 1. The only code that ever reads the untrusted file. |
 | `container/rebuild.py` | Sandbox 2. Builds the PDF and runs OCR on several pages at once. |
+| `pdf_sanitizer/windows.py` | The right-click Send to entry: creates the shortcut and converts Windows paths. |
 | `container/Dockerfile` | The sandbox image: Python 3.12, PyMuPDF 2.1, English OCR data. |
 
 ## Tests

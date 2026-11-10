@@ -59,3 +59,23 @@ The user downloads free ebooks and worries they carry malware. They chose a clea
 - Only worth it if the tool is given to non-technical users. Decision on 2026-11-10: keep the Docker version as the product.
 - Before any rewrite: a one or two-day spike that renders one PDF page with MuPDF.js, rebuilds it and measures speed.
 - Reference: Dangerzone 0.10.0 bundles Podman so its users skip Docker Desktop (https://dangerzone.rocks/news/2025-12-02-0.10.0/).
+
+## Right-click menu (added 2026-11-10)
+
+- `pdf-sanitizer install-menu` puts "Sanitize document.lnk" in the user's Send to folder. Target: `wsl.exe --cd ~ -d <distro> -e <repo>/pdf-sanitizer --from-windows --pause`. `remove-menu` deletes it.
+- File names never pass through cmd.exe or a shell. `tests/test_windows.py` launches wsl.exe the way File Explorer does, with five hostile names (`&`, `%`, `^`, quotes, Chinese), and checks that all are sanitized and nothing ran.
+- Learned: wsl.exe keeps quote marks in a `-d` value, so the distro name must stay unquoted. The code accepts only `[A-Za-z0-9._-]` names.
+- Not automated: a real right-click in File Explorer. The user checks this by hand.
+
+## EPUB test by a helper agent (2026-11-10)
+
+| Book (Gutenberg id) | Original | Pages (tool / MuPDF) | Time | Safe copy |
+|---|---|---|---|---|
+| The Tale of Peter Rabbit (#14838), 28 colour pictures | 1.5 MB | 47 / 47 | 29 s | 35.7 MB |
+| Relativity (#30155), footnotes, equation images, contents table | 1.06 MB | 134 / 134 | 156 s | 13.9 MB |
+| 論語 The Analects (#23839), Chinese | 0.09 MB | 57 / 57 | 104 s | 4.7 MB |
+
+- All three render correctly. Chinese characters show as real glyphs (MuPDF's Droid Sans Fallback); I checked page 3 myself.
+- Chinese search text is junk: OCR is English only. With `--no-ocr` the Chinese book took 23 s instead of 104 s. Option: add `tesseract-ocr-chi-sim` / `chi-tra`, or skip OCR for Chinese books.
+- Picture-heavy books get big: about 1.4 MB per colour picture page (lossless). Option: JPEG for colour picture pages only. JPEG was worse for text pages; see Decisions.
+- OCR adds junk tokens on illustration pages and misreads maths symbols. Real words still search fine.
