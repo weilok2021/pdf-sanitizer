@@ -1,0 +1,15 @@
+#!/usr/bin/env -S python3 -I
+"""Entry point for ebook-sanitizer.
+
+It runs Python in isolated mode (-I), so a planted .py file in the folder
+you run it from (for example Downloads) can never be imported.
+"""
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from ebook_sanitizer.cli import main  # noqa: E402
+
+sys.exit(main(sys.argv[1:]))

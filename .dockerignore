@@ -1,0 +1,6 @@
+.git
+tests
+notes
+**/__pycache__
+*.pdf
+*.epub
