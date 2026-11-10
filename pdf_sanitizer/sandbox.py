@@ -124,9 +124,18 @@ class Stage:
         return safe_log(bytes(self._stderr))
 
     def kill(self):
-        subprocess.run(["docker", "rm", "-f", self.name], capture_output=True)
+        """Stop the container.
+
+        Kill the docker client first. While the client is stuck handing us
+        output that we no longer read, Docker cannot remove the container,
+        and `docker rm -f` would wait forever.
+        """
         if self.proc.poll() is None:
             self.proc.kill()
+        try:
+            subprocess.run(["docker", "rm", "-f", self.name], capture_output=True, timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
 
     def wait(self, timeout=None):
         try:

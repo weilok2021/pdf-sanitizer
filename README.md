@@ -56,6 +56,8 @@ pdf-sanitizer invoice.pdf            # makes invoice.safe.pdf next to it
 pdf-sanitizer -o ~/Safe *.pdf *.epub # many files, saved in another folder
 ```
 
+To stop a run, press Ctrl+C. The tool removes its containers and any half-written file.
+
 Your Windows Downloads folder is at `/mnt/c/Users/<your Windows name>/Downloads` inside WSL.
 
 | Option | What it does |

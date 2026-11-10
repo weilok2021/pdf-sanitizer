@@ -67,6 +67,27 @@ def risky_pdf():
     return _pdf(objects)
 
 
+def long_pdf(pages):
+    """A plain text PDF with many pages, for tests that need a slow run."""
+    kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(pages))
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {pages} >>".encode(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    for i in range(pages):
+        lines = "".join(
+            f"BT /F1 12 Tf 72 {720 - 16 * row} Td (Page {i + 1} line {row + 1}: the quick brown fox.) Tj ET\n"
+            for row in range(40)
+        )
+        objects.append(
+            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {5 + 2 * i} 0 R"
+            " /Resources << /Font << /F1 3 0 R >> >> >>".encode()
+        )
+        objects.append(_stream(lines.encode()))
+    return _pdf(objects)
+
+
 def risky_epub():
     """A small EPUB with inline and external scripts and a web link."""
     container = (

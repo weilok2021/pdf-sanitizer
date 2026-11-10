@@ -23,12 +23,16 @@ The user downloads free ebooks and worries they carry malware. They chose a clea
 - **OCR runs in up to 8 worker processes** (forkserver, `OMP_THREAD_LIMIT=1`). Alice dropped from 217 s to 55 s.
 - **A document whose pages all come out pure white is a failure.** This catches files the reader cannot really read. AZW3 did exactly this before the check refused it.
 
+## Bugs found in testing
+
+- **Ctrl+C hung the tool** and left a render container and a `.part` file. Cause: the docker client was stuck handing over pixels nobody read, so `docker rm -f` waited forever. Fix: kill the docker client first, then `docker rm -f` with a 30 s limit. `tests/test_interrupt.py` guards it and fails on the old code.
+
 ## Measured (12-core PC, 150 DPI, OCR on)
 
 - Alice EPUB: 100 pages, 55 s, 0.2 MB to 9.6 MB.
 - Alice MOBI: 111 pages, 61 s, 0.2 MB to 8.5 MB.
 - arXiv PDF: 15 pages, 16 s, 2.1 MB to 2.8 MB. At 300 DPI: 31 s, 6.1 MB.
-- 43 tests pass (`python3 -m unittest discover -s tests -t .`).
+- 45 tests pass (`python3 -m unittest discover -s tests -t .`).
 
 ## Loose ends
 

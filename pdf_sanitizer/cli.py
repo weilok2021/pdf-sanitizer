@@ -154,9 +154,14 @@ def cmd_sanitize(argv):
 
     results = []
     made = set()
-    for path in args.files:
-        results.append(_sanitize_one(path, args, made))
-        _say()
+    try:
+        for path in args.files:
+            results.append(_sanitize_one(path, args, made))
+            _say()
+    except KeyboardInterrupt:
+        # The sandbox and the half-written file are cleaned up on the way out.
+        _say("\nStopped. The file in progress has no safe copy.")
+        return 130
     done = sum(results)
     _say(f"{done} of {len(results)} sanitized.")
     return 0 if all(results) else 1
