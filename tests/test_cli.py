@@ -10,10 +10,12 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import secrets
 import zipfile
 from pathlib import Path
+from unittest import mock
 
-from pdf_sanitizer import cli, sandbox
+from pdf_sanitizer import cli, sandbox, windows
 from tests import fixtures
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -61,6 +63,24 @@ class ReportTest(unittest.TestCase):
             output = self.report(path)
         self.assertNotIn("‮", output)
         self.assertIn("\\u202e", output)
+
+
+class OtherErrorTest(unittest.TestCase):
+    """An OSError that is not about the safe copy is not called a write error."""
+
+    def test_other_os_error_keeps_its_own_words(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = os.path.join(work, "book.pdf")
+            with open(path, "wb") as f:
+                f.write(fixtures.risky_pdf())
+            args = cli._parse_sanitize([path])
+            stdout = io.StringIO()
+            error = OSError(24, "Too many open files")
+            with mock.patch.object(cli.sandbox, "sanitize", side_effect=error), contextlib.redirect_stdout(stdout):
+                self.assertFalse(cli._sanitize_one(path, args, set()))
+            self.assertEqual(os.listdir(work), ["book.pdf"])  # no .part file left
+        self.assertIn("Failed: Too many open files", stdout.getvalue())
+        self.assertNotIn("could not write", stdout.getvalue())
 
 
 class FakeTerminal(io.StringIO):
@@ -122,15 +142,36 @@ class BatchTest(unittest.TestCase):
         self.assertEqual(code, 0, output)
         self.assertTrue((self.dir / f"{stem}.safe.pdf").exists())
 
-    def test_names_that_differ_only_in_case_do_not_overwrite_each_other(self):
-        # On /mnt/c, Book.safe.pdf and book.safe.pdf are the same file.
+    def test_names_that_differ_only_in_case_both_get_a_copy_on_linux(self):
+        # A Linux folder keeps Book.safe.pdf and book.safe.pdf apart.
         out = self.dir / "out"
         out.mkdir()
-        first, second = self.book("one/Book.pdf"), self.book("two/book.pdf")
-        code, output = self.run_tool("--force", "-o", str(out), first, second)
-        self.assertIn("this run already made", output)
-        self.assertIn("1 of 2 sanitized.", output)
-        self.assertEqual(os.listdir(out), ["Book.safe.pdf"])
+        code, output = self.run_tool("-o", str(out), self.book("one/Book.pdf"), self.book("two/book.pdf"))
+        self.assertIn("2 of 2 sanitized.", output)
+        self.assertEqual(sorted(os.listdir(out)), ["Book.safe.pdf", "book.safe.pdf"])
+
+
+@unittest.skipUnless(READY and windows.in_wsl(), "needs WSL, Docker and a built sandbox")
+class WindowsFolderBatchTest(unittest.TestCase):
+    def test_names_that_differ_only_in_case_do_not_overwrite_each_other(self):
+        # In a Windows folder, Book.safe.pdf and book.safe.pdf are one file.
+        local = windows._powershell("[Environment]::GetFolderPath('LocalApplicationData')")
+        out = Path(windows.to_wsl_path(f"{local}\\Temp\\pdf-sanitizer-test-{secrets.token_hex(4)}"))
+        out.mkdir(parents=True)
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(out)])
+        books = []
+        for relative in ("one/Book.pdf", "two/book.pdf"):
+            path = out / relative
+            path.parent.mkdir()
+            path.write_bytes(fixtures.risky_pdf())
+            books.append(str(path))
+        result = subprocess.run(
+            [sys.executable, "-I", str(ROOT / "pdf-sanitizer"), "--force", "-o", str(out), *books],
+            capture_output=True, text=True, timeout=300,
+        )
+        self.assertIn("this run already made", result.stdout)
+        self.assertIn("1 of 2 sanitized.", result.stdout)
+        self.assertEqual(sorted(p.name for p in out.glob("*.pdf")), ["Book.safe.pdf"])
 
 
 if __name__ == "__main__":

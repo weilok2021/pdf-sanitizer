@@ -60,10 +60,10 @@ def _parse_sanitize(argv):
         parser.error("--dpi must be between 72 and 300")
     if args.timeout < 10:
         parser.error("--timeout must be at least 10 seconds")
-    missing = [code for code in args.lang.split("+") if code not in sandbox.OCR_LANGUAGES]
-    if missing:
-        installed = ", ".join(sandbox.OCR_LANGUAGES)
-        parser.error(f"--lang: {safe(missing[0])} is not installed in the sandbox (installed: {installed})")
+    try:
+        sandbox.check_language(args.lang)  # sanitize() checks again; this says it before any work
+    except sandbox.SanitizeError as e:
+        parser.error(f"--lang: {e}")
     return args
 
 
@@ -134,8 +134,14 @@ class _Progress:
             self.open = False
 
 
+def _file_id(path):
+    """Which file a path really is: two names for one file give the same id."""
+    info = os.stat(path)
+    return info.st_dev, info.st_ino
+
+
 def _sanitize_one(path, args, made):
-    """Sanitize one document. `made` holds the safe copies this run has written."""
+    """Sanitize one document. `made` holds the file ids of the safe copies this run wrote."""
     verdict = filetype.inspect(path)
     _report(_shown(path, args), verdict)
     if not verdict.ok:
@@ -147,8 +153,9 @@ def _sanitize_one(path, args, made):
     src = Path(path)
     out_dir = Path(args.out_dir) if args.out_dir else src.parent
     final = out_dir / f"{src.stem}.safe.pdf"
-    # Windows folders (/mnt/c) ignore case: Book.safe.pdf and book.safe.pdf are one file.
-    if str(final).casefold() in made:
+    # Ask the file system, not the name: in a Windows folder (/mnt/c),
+    # book.safe.pdf finds the Book.safe.pdf this run already made.
+    if final.exists() and _file_id(final) in made:
         _say(f"  Skipped: this run already made {_shown(final, args)} from another file with the same name.")
         return False
     if final.exists() and not args.force:
@@ -177,7 +184,11 @@ def _sanitize_one(path, args, made):
     except OSError as e:
         # For example a folder you cannot write to. The other files still run.
         progress.end()
-        _say(f"  Failed: could not write the safe copy: {safe(e.strerror or str(e))}")
+        reason = safe(e.strerror or str(e))
+        if str(e.filename) in (str(part), str(final)):
+            _say(f"  Failed: could not write the safe copy: {reason}")
+        else:
+            _say(f"  Failed: {reason}")
         return False
     finally:
         try:
@@ -185,7 +196,7 @@ def _sanitize_one(path, args, made):
         except OSError:
             pass
 
-    made.add(str(final).casefold())
+    made.add(_file_id(final))
     size_mb = final.stat().st_size / (1024 * 1024)
     seconds = time.monotonic() - started
     _say(f"  Safe copy: {_shown(final, args)} ({outcome.pages} pages, {size_mb:.1f} MB, {seconds:.0f} s)")

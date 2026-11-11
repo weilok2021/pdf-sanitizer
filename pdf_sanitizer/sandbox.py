@@ -262,16 +262,29 @@ def _sink(stage, out_file, watchdog, failures, stop):
         watchdog.touch()
 
 
-def _failed(stage, code, what):
+def _failed(stage, what, code=None):
+    """The error for a stage that failed: its own last words, or a memory stop."""
     if code == KILLED:
         return SanitizeError(f"{what} It was stopped, most likely because it ran out of memory (the limit is {MEMORY.upper()}B).")
-    return SanitizeError(_explain(stage, what))
-
-
-def _explain(stage, what):
     lines = stage.stderr_lines()
     detail = ("\n    " + "\n    ".join(lines)) if lines else ""
-    return f"{what}{detail}"
+    return SanitizeError(f"{what}{detail}")
+
+
+def _exit_code(stage, seconds=10):
+    """Wait a little for a stage to end by itself. None if it is still running."""
+    try:
+        return stage.proc.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def check_language(language):
+    """Raise SanitizeError unless every OCR language in it (eng+deu) is installed."""
+    missing = [code for code in language.split("+") if code not in OCR_LANGUAGES]
+    if missing:
+        installed = ", ".join(OCR_LANGUAGES)
+        raise SanitizeError(f"{safe(missing[0])} is not installed in the sandbox (installed: {installed})")
 
 
 def render_argv(kind, dpi):
@@ -287,6 +300,8 @@ def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeou
 
     Return an Outcome. Raise SanitizeError on any failure.
     """
+    if ocr:
+        check_language(language)
     tag = image_tag()
     render = Stage("render", tag, render_argv(kind, dpi))
     rebuild = Stage("rebuild", tag, rebuild_argv(dpi, ocr, language))
@@ -303,6 +318,8 @@ def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeou
     def check_failures():
         if failures:
             raise SanitizeError(failures[0])
+        if watchdog.fired:
+            raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.")
 
     watchdog = Watchdog(timeout, kill_all)
     feeder = threading.Thread(target=_feed, args=(src_path, render, watchdog, failures, kill_all), daemon=True)
@@ -316,39 +333,32 @@ def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeou
             rebuild.proc.stdin.close()
         except protocol.StreamError as e:
             check_failures()
-            if watchdog.fired:
-                kill_all()
-                raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.") from None
             # A render stage that gave up on its own exits with an error code.
-            # Wait for it before killing, so its message is not lost.
-            try:
-                render_code = render.proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                render_code = None
+            # Read it before killing: a kill would hide it behind code 137.
+            render_code = _exit_code(render)
             kill_all()
             if render_code not in (0, None):
-                raise _failed(render, render_code, "The sandbox could not open the document.") from None
+                raise _failed(render, "The sandbox could not open the document.", render_code) from None
             raise SanitizeError(
                 f"The sandbox sent malformed page data ({e}). The file may be malicious. Delete it."
             ) from None
         except (BrokenPipeError, OSError):
-            kill_all()
+            # The rebuild stage stopped reading, for example because it ran
+            # out of memory. Read its exit code before killing, as above.
             check_failures()
-            if watchdog.fired:
-                raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.") from None
-            raise SanitizeError(_explain(rebuild, "The rebuild step stopped early.")) from None
+            rebuild_code = _exit_code(rebuild)
+            kill_all()
+            raise _failed(rebuild, "The rebuild step stopped early.", rebuild_code) from None
 
         render_code = render.wait(timeout=60)
         rebuild_code = rebuild.wait()
         sink.join()
         feeder.join()
         check_failures()
-        if watchdog.fired:
-            raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.")
         if render_code != 0:
-            raise _failed(render, render_code, "The sandbox could not open the document.")
+            raise _failed(render, "The sandbox could not open the document.", render_code)
         if rebuild_code != 0:
-            raise _failed(rebuild, rebuild_code, "The rebuild step failed.")
+            raise _failed(rebuild, "The rebuild step failed.", rebuild_code)
         if outcome.blank_pages == outcome.pages:
             raise SanitizeError(
                 "Every page came out blank, so the sandbox could not really read this document."

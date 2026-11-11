@@ -259,6 +259,21 @@ class CompromisedRendererTest(unittest.TestCase):
             self.run_with_renderer(code)
         self.assertIn("ran out of memory", str(caught.exception))
 
+    def test_rebuild_out_of_memory_says_so(self):
+        # The rebuild stage dies while the host still sends it pixels.
+        fake = lambda dpi, ocr, language: ["python", "-I", "-c", "x = bytearray(3 * 1024 ** 3)"]  # noqa: E731
+        with mock.patch.object(sandbox, "rebuild_argv", fake), self.assertRaises(sandbox.SanitizeError) as caught:
+            sandbox.sanitize(self.book, io.BytesIO(), "pdf", timeout=120)
+        self.assertIn("ran out of memory", str(caught.exception))
+
+
+class LanguageTest(unittest.TestCase):
+    def test_sanitize_refuses_a_language_that_is_not_installed(self):
+        # Checked before any container starts, so no Docker is needed.
+        with self.assertRaises(sandbox.SanitizeError) as caught:
+            sandbox.sanitize("unused.pdf", io.BytesIO(), "pdf", language="eng+deu")
+        self.assertIn("deu is not installed", str(caught.exception))
+
 
 class DiskFull(io.BytesIO):
     """An output file on a disk with room for only 1,000 bytes."""

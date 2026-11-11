@@ -41,3 +41,15 @@ Loose ends from the security review:
 - A total time cap per document, and `--cpus` on the containers.
 - gVisor (`--runtime=runsc`) as a second wall around both stages.
 - No check of the final PDF beyond `%PDF-`.
+
+## Code review of the PR (round 2, 2026-11-11)
+
+The fresh-session review of this branch: security clean; five correctness findings, all checked and fixed.
+
+| Finding | Check | Fix |
+|---|---|---|
+| Rebuild out of memory showed "stopped early", not the memory message | Confirmed: that branch killed both stages before reading the exit code. | Read the exit code first (`_exit_code`), then kill, then `_failed`. Test: a fake rebuild that takes 3 GB. |
+| `except OSError` called every OSError a write error | Confirmed. | "could not write the safe copy" only when `e.filename` is the `.part` or final file; otherwise the OS's own words. |
+| Case-folded duplicate check: false skips on Linux, and casefold is not NTFS's rule (`ß`) | Confirmed. | Compare file ids (`st_dev`, `st_ino`) instead of names. Measured on `/mnt/c`: both spellings give one id, stable across renames. Tests on a Linux folder (both copies made) and a Windows folder (second skipped). |
+| `--lang` checked only in the CLI | Confirmed. | `sandbox.check_language()`; `sanitize()` calls it before any container starts, and the CLI uses it for the early usage error. |
+| Two error helpers; timeout message in three places | Confirmed. | `_explain` merged into `_failed(stage, what, code=None)`; the timeout message lives only in `check_failures()`. |
