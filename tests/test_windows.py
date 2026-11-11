@@ -1,7 +1,9 @@
-"""The Windows right-click entry, "Send to > Sanitize document".
+"""The Windows right-click entries: "Open with > pdf-sanitizer" and
+"Send to > Sanitize document".
 
 The pure tests run anywhere. The others need WSL, and the end-to-end tests
-also need Docker and a built sandbox.
+also need Docker and a built sandbox. The Open with tests register a
+made-up file type and ending, never the real .pdf entry.
 """
 
 import os
@@ -50,6 +52,152 @@ class ShortcutArgumentsTest(unittest.TestCase):
         self.assertEqual(windows._ps_literal("it's"), "'it''s'")
 
 
+class OpenWithArgumentsTest(unittest.TestCase):
+    def test_file_path_is_quoted(self):
+        self.assertEqual(
+            windows.open_with_arguments("/home/me/my tools/pdf-sanitizer", "Ubuntu"),
+            '--cd ~ -d Ubuntu -e "/home/me/my tools/pdf-sanitizer" --from-windows --pause "%1"',
+        )
+
+    def test_pause_can_be_left_out(self):
+        self.assertNotIn("--pause", windows.open_with_arguments("/home/me/pdf-sanitizer", "Ubuntu", pause=False))
+
+    def test_percent_in_tool_path_is_refused(self):
+        # Explorer would read "%1" or "%L" in the tool's path as a placeholder.
+        with self.assertRaises(windows.IntegrationError):
+            windows.open_with_arguments("/home/me/100%1/pdf-sanitizer", "Ubuntu")
+
+    def test_shortcut_rules_still_apply(self):
+        with self.assertRaises(windows.IntegrationError):
+            windows.open_with_arguments('/home/me/a"b/pdf-sanitizer', "Ubuntu")
+        with self.assertRaises(windows.IntegrationError):
+            windows.open_with_arguments("/home/me/pdf-sanitizer", "Ubuntu&calc")
+
+
+# Asks Windows the two questions File Explorer asks: which apps does the
+# Open with menu list for an ending (SHAssocEnumHandlers), and what runs
+# when one is chosen (ShellExecuteEx with the app's type, which fills in "%1").
+SHELL_HELPER = r'''
+Add-Type -TypeDefinition @"
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+[ComImport, Guid("F04061AC-1659-4a3f-A954-775AA57FC083"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IAssocHandler {
+  [PreserveSig] int GetName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+  [PreserveSig] int GetUIName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+}
+[ComImport, Guid("973810ae-9599-4b88-9e4d-6ee98c9552da"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+public interface IEnumAssocHandlers {
+  [PreserveSig] int Next(uint count, [MarshalAs(UnmanagedType.Interface)] out IAssocHandler handler, out uint fetched);
+}
+[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+public struct ShellExecuteInfo {
+  public int cbSize; public uint fMask; public IntPtr hwnd;
+  public string lpVerb; public string lpFile; public string lpParameters; public string lpDirectory;
+  public int nShow; public IntPtr hInstApp; public IntPtr lpIDList; public string lpClass;
+  public IntPtr hkeyClass; public uint dwHotKey; public IntPtr hIcon; public IntPtr hProcess;
+}
+public static class ShellHelper {
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+  static extern int SHAssocEnumHandlers(string ending, int filter, out IEnumAssocHandlers handlers);
+  [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  static extern bool ShellExecuteEx(ref ShellExecuteInfo info);
+  [DllImport("kernel32.dll")] static extern uint WaitForSingleObject(IntPtr handle, uint ms);
+  [DllImport("kernel32.dll")] static extern bool GetExitCodeProcess(IntPtr handle, out uint code);
+  [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+
+  public static string[] OpenWithNames(string ending) {
+    var names = new List<string>();
+    IEnumAssocHandlers handlers;
+    if (SHAssocEnumHandlers(ending, 1, out handlers) != 0) return names.ToArray();  // 1: recommended
+    IAssocHandler handler; uint fetched;
+    while (handlers.Next(1, out handler, out fetched) == 0 && fetched == 1) {
+      string name; handler.GetUIName(out name); names.Add(name);
+    }
+    return names.ToArray();
+  }
+
+  public static long Launch(string progid, string file, uint ms) {
+    var info = new ShellExecuteInfo();
+    info.cbSize = Marshal.SizeOf(info);
+    info.fMask = 0x1 | 0x40 | 0x100 | 0x400;  // class name, keep process, no async, no UI
+    info.lpVerb = "open"; info.lpFile = file; info.lpClass = progid; info.nShow = 0;
+    if (!ShellExecuteEx(ref info)) return -Marshal.GetLastWin32Error();
+    uint code = 0;
+    if (WaitForSingleObject(info.hProcess, ms) == 0) GetExitCodeProcess(info.hProcess, out code); else code = 9999;
+    CloseHandle(info.hProcess);
+    return code;
+  }
+}
+"@
+'''
+
+
+class FakeFileType:
+    """A made-up file type and ending, removed again when the test ends."""
+
+    def __init__(self, test):
+        token = secrets.token_hex(4)
+        self.progid = f"PdfSanitizer.Test{token}"
+        self.ending = f".pstest{token}"
+        # Cleanups run last first: the entry, then the ending's own key.
+        test.addCleanup(self._forget_ending)
+        test.addCleanup(windows.remove_open_with, self.progid, [self.ending])
+
+    def _forget_ending(self):
+        key = windows._ps_literal(f"{windows.CLASSES}\\{self.ending}")
+        windows._powershell(f"[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree({key}, $false)")
+
+    def install(self, pause=True):
+        windows.install_open_with(
+            ROOT / "pdf-sanitizer", os.environ["WSL_DISTRO_NAME"],
+            progid=self.progid, extensions=[self.ending], pause=pause,
+        )
+
+    def read(self):
+        return windows.read_open_with(self.progid, [self.ending])
+
+    def remove(self):
+        return windows.remove_open_with(self.progid, [self.ending])
+
+    def open_with_names(self):
+        script = SHELL_HELPER + f"[ShellHelper]::OpenWithNames({windows._ps_literal(self.ending)})\n"
+        return windows._powershell(script).splitlines()
+
+
+@unittest.skipUnless(IN_WSL, "needs WSL with Windows interop")
+class OpenWithRegistryTest(unittest.TestCase):
+    def setUp(self):
+        self.type = FakeFileType(self)
+
+    def test_entry_is_added_read_and_removed(self):
+        self.assertNotIn(windows.APP_NAME, self.type.open_with_names())
+        self.type.install()
+
+        name, command, endings = self.type.read()
+        self.assertEqual(name, windows.APP_NAME)
+        self.assertTrue(command.lower().startswith('"c:\\windows\\system32\\wsl.exe" '), command)
+        arguments = windows.open_with_arguments(ROOT / "pdf-sanitizer", os.environ["WSL_DISTRO_NAME"])
+        self.assertTrue(command.endswith(" " + arguments), command)
+        self.assertEqual(endings, [self.type.ending])
+        # The name the Open with menu shows, not "Windows Subsystem for Linux".
+        self.assertIn(windows.APP_NAME, self.type.open_with_names())
+
+        self.assertTrue(self.type.remove())
+        self.assertIsNone(self.type.read())
+        self.assertNotIn(windows.APP_NAME, self.type.open_with_names())
+        self.assertFalse(self.type.remove())
+
+    def test_remove_keeps_other_apps(self):
+        self.type.install()
+        other = windows._ps_literal(f"{windows.CLASSES}\\{self.type.ending}\\OpenWithProgids")
+        windows._powershell(f"[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey({other}).SetValue('Other.App', '')")
+        self.type.remove()
+        names = windows._powershell(f"[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey({other}).GetValueNames()")
+        self.assertEqual(names.splitlines(), ["Other.App"])
+
+
 class WindowsFolderTest(unittest.TestCase):
     """Each test gets a fresh folder under the user's Windows temp folder."""
 
@@ -85,7 +233,7 @@ class WslTest(WindowsFolderTest):
 
 
 @unittest.skipUnless(IN_WSL and DOCKER_READY, "needs WSL, Docker and a built sandbox")
-class SendToEndToEndTest(WindowsFolderTest):
+class RightClickEndToEndTest(WindowsFolderTest):
     def test_explorer_style_launch_with_hostile_names(self):
         for name in HOSTILE_NAMES:
             (self.dir / name).write_bytes(fixtures.risky_pdf())
@@ -115,6 +263,23 @@ class SendToEndToEndTest(WindowsFolderTest):
         # Messages show Windows paths, which is what a File Explorer user knows.
         self.assertIn(f"Safe copy: {self.win_dir}\\", output)
         # Nothing ran a command hidden in a file name.
+        self.assertNotIn("PWNED", os.listdir(self.dir))
+        self.assertFalse((Path.home() / "PWNED").exists())
+
+    def test_open_with_launch_with_hostile_names(self):
+        fake = FakeFileType(self)
+        fake.install(pause=False)  # no one is there to press Enter
+
+        launches = ""
+        for name in HOSTILE_NAMES:
+            (self.dir / name).write_bytes(fixtures.risky_pdf())
+            file = windows._ps_literal(f"{self.win_dir}\\{name}")
+            launches += f"Write-Output ([ShellHelper]::Launch({windows._ps_literal(fake.progid)}, {file}, 300000))\n"
+        exit_codes = windows._powershell(SHELL_HELPER + launches, timeout=1600).splitlines()
+
+        self.assertEqual(exit_codes, ["0"] * len(HOSTILE_NAMES))
+        for name in HOSTILE_NAMES:
+            self.assertTrue((self.dir / f"{Path(name).stem}.safe.pdf").exists(), name)
         self.assertNotIn("PWNED", os.listdir(self.dir))
         self.assertFalse((Path.home() / "PWNED").exists())
 

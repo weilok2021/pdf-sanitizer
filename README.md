@@ -77,17 +77,27 @@ Sanitize files from File Explorer without typing:
 ./pdf-sanitizer install-menu
 ```
 
-Then, in File Explorer:
+It adds two entries to the right-click menu in File Explorer:
 
-1. Right-click one or more files.
-2. On Windows 11, choose **Show more options** (or hold Shift while you right-click).
-3. Choose **Send to → Sanitize document**.
+| Entry | Use it for | Where it is on Windows 11 |
+|---|---|---|
+| **Open with → pdf-sanitizer** | one file | on the menu itself |
+| **Send to → Sanitize document** | many files at once | under **Show more options** (or hold Shift while you right-click) |
+
+Open with appears for `.pdf`, `.epub`, `.mobi`, `.fb2` and `.cbz` files. Send to appears for any file; the file-type check refuses what is not a document.
 
 A window shows the progress. Each safe copy appears next to its original. Press Enter to close the window.
 
-To take the entry away again: `./pdf-sanitizer remove-menu`.
+Your default PDF app stays the same: a double-click on a PDF opens it as before. An ebook ending that no other app opens (for example `.epub` with no EPUB reader installed) now makes a safe copy on double-click, because pdf-sanitizer is the only app listed for it.
 
-How it works: the entry is a Windows shortcut in your Send to folder. It starts `wsl.exe` directly, which runs pdf-sanitizer with the chosen files. File names never pass through `cmd.exe` or a `.bat` file, so a crafted name such as `a&mkdir PWNED&.pdf` cannot run a command. A test checks exactly this.
+To take both entries away again: `./pdf-sanitizer remove-menu`.
+
+How it works:
+
+- **Open with** is a per-user file type entry in the registry (`HKEY_CURRENT_USER` only, no admin rights). File Explorer puts the chosen file's path in place of `"%1"` in its command. A Windows file name cannot contain a double quote, so the path stays one argument.
+- **Send to** is a Windows shortcut in your Send to folder. File Explorer adds the chosen files' paths to the end of its command.
+- Both start `wsl.exe` directly, which runs pdf-sanitizer. File names never pass through `cmd.exe` or a `.bat` file, so a crafted name such as `a&mkdir PWNED&.pdf` cannot run a command. The tests launch both entries with names like that.
+- A "Sanitize document" item directly on the Windows 11 menu is not possible this way. Windows 11 shows registry entries only under Show more options; an item on the menu itself needs a signed app package ([Microsoft](https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/integrate-packaged-app-with-file-explorer)). Open with is already on the menu, so it gets there without one.
 
 ## Formats
 
@@ -147,7 +157,7 @@ OCR takes most of the time. Without OCR, the Alice EPUB took 10 s.
 | `pdf_sanitizer/text.py` | Makes file names and error messages safe to print in a terminal. |
 | `container/render.py` | Sandbox 1. The only code that ever reads the untrusted file. |
 | `container/rebuild.py` | Sandbox 2. Builds the PDF and runs OCR on several pages at once. |
-| `pdf_sanitizer/windows.py` | The right-click Send to entry: creates the shortcut and converts Windows paths. |
+| `pdf_sanitizer/windows.py` | The right-click entries (Open with and Send to), and Windows path conversion. |
 | `container/Dockerfile` | The sandbox image: Python 3.12, PyMuPDF 2.1, English OCR data. |
 
 ## Tests

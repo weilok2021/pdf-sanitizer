@@ -1,8 +1,16 @@
-"""Windows integration: the right-click "Send to > Sanitize document" entry.
+"""Windows integration: two right-click entries in File Explorer.
 
-Works from WSL. The entry is a Windows shortcut in the user's Send to
-folder. It runs wsl.exe directly, which runs pdf-sanitizer, and File
-Explorer adds the chosen files' paths to the end of its command.
+    Open with > pdf-sanitizer       one document; on the Windows 11 menu itself
+    Send to > Sanitize document     many files at once; under "Show more options"
+
+Works from WSL. Both entries run wsl.exe directly, which runs
+pdf-sanitizer with the chosen file paths.
+
+- Open with: a per-user file type entry (a "ProgID") in the registry,
+  listed under each document ending's OpenWithProgids key. Only HKCU is
+  touched, so no admin rights are needed. The default app for PDFs stays
+  as it was.
+- Send to: a Windows shortcut in the user's Send to folder.
 
 File names come from the internet, so an attacker controls them. They
 never pass through cmd.exe, a .bat file or a shell, where a character
@@ -18,6 +26,12 @@ from pathlib import PurePosixPath
 
 SHORTCUT_NAME = "Sanitize document.lnk"
 DESCRIPTION = "Make a safe PDF copy with pdf-sanitizer"
+
+PROGID = "PdfSanitizer.Document"
+APP_NAME = "pdf-sanitizer"  # the name the Open with menu shows
+EXTENSIONS = (".pdf", ".epub", ".mobi", ".fb2", ".cbz")
+CLASSES = "Software\\Classes"
+TOASTS = "Software\\Microsoft\\Windows\\CurrentVersion\\ApplicationAssociationToasts"
 
 
 class IntegrationError(Exception):
@@ -130,3 +144,101 @@ def read_shortcut(folder=None):
     )
     lines = _powershell(script).splitlines()
     return (lines[0], lines[1]) if len(lines) >= 2 else None
+
+
+def open_with_arguments(entry_script, distro, pause=True):
+    """The arguments of the Open with command, after the path of wsl.exe.
+
+    File Explorer puts the chosen file's path in place of "%1". The quotes
+    around it keep it one argument: a Windows path cannot contain a double
+    quote. Explorer also reads other %-codes in the command, so the tool's
+    own path may not contain a percent sign.
+    """
+    arguments = shortcut_arguments(entry_script, distro)
+    if "%" in arguments:
+        raise IntegrationError("the tool's path contains a percent sign; cannot build the Open with entry")
+    if not pause:
+        arguments = arguments.removesuffix(" --pause")
+    return f'{arguments} "%1"'
+
+
+def _ps_array(items):
+    return "@(" + ", ".join(_ps_literal(item) for item in items) + ")"
+
+
+def install_open_with(entry_script, distro, progid=PROGID, extensions=EXTENSIONS, pause=True):
+    """Add "Open with > pdf-sanitizer" for each document ending.
+
+    progid, extensions: tests pass a made-up type and ending instead.
+    """
+    arguments = open_with_arguments(entry_script, distro, pause)
+    verb = f"{CLASSES}\\{progid}\\shell\\open"
+    command = f"{verb}\\command"
+    script = (
+        "$hkcu = [Microsoft.Win32.Registry]::CurrentUser\n"
+        "$wsl = Join-Path $env:SystemRoot 'System32\\wsl.exe'\n"
+        f"$k = $hkcu.CreateSubKey({_ps_literal(verb)})\n"
+        f"$k.SetValue('FriendlyAppName', {_ps_literal(APP_NAME)})\n"
+        # One window per file is fine for one file; Send to handles many.
+        "$k.SetValue('MultiSelectModel', 'Single')\n"
+        "$k.Close()\n"
+        f"$k = $hkcu.CreateSubKey({_ps_literal(command)})\n"
+        f"$k.SetValue('', '\"' + $wsl + '\" ' + {_ps_literal(arguments)})\n"
+        "$k.Close()\n"
+        f"$toasts = $hkcu.CreateSubKey({_ps_literal(TOASTS)})\n"
+        f"foreach ($ext in {_ps_array(extensions)}) {{\n"
+        f"  $k = $hkcu.CreateSubKey({_ps_literal(CLASSES)} + '\\' + $ext + '\\OpenWithProgids')\n"
+        f"  $k.SetValue({_ps_literal(progid)}, '', [Microsoft.Win32.RegistryValueKind]::String)\n"
+        "  $k.Close()\n"
+        # Windows lists the apps it has already announced for a file type
+        # here. Being on the list keeps it from asking "How do you want to
+        # open this file?", where a slip would make this the default PDF app.
+        f"  $toasts.SetValue({_ps_literal(progid + '_')} + $ext, 0, [Microsoft.Win32.RegistryValueKind]::DWord)\n"
+        "}\n"
+        "$toasts.Close()\n"
+    )
+    _powershell(script)
+
+
+def remove_open_with(progid=PROGID, extensions=EXTENSIONS):
+    """Take the Open with entry away. Return True if it was there.
+
+    Only this tool's own keys and values are deleted. Other apps listed
+    under the same document endings stay.
+    """
+    key = f"{CLASSES}\\{progid}"
+    script = (
+        "$hkcu = [Microsoft.Win32.Registry]::CurrentUser\n"
+        f"$progid = {_ps_literal(key)}\n"
+        "$k = $hkcu.OpenSubKey($progid)\n"
+        "$found = $null -ne $k\n"
+        "if ($found) { $k.Close(); $hkcu.DeleteSubKeyTree($progid) }\n"
+        f"$toasts = $hkcu.OpenSubKey({_ps_literal(TOASTS)}, $true)\n"
+        f"foreach ($ext in {_ps_array(extensions)}) {{\n"
+        f"  $k = $hkcu.OpenSubKey({_ps_literal(CLASSES)} + '\\' + $ext + '\\OpenWithProgids', $true)\n"
+        f"  if ($k) {{ $k.DeleteValue({_ps_literal(progid)}, $false); $k.Close() }}\n"
+        f"  if ($toasts) {{ $toasts.DeleteValue({_ps_literal(progid + '_')} + $ext, $false) }}\n"
+        "}\n"
+        "if ($toasts) { $toasts.Close() }\n"
+        "Write-Output $found\n"
+    )
+    return _powershell(script) == "True"
+
+
+def read_open_with(progid=PROGID, extensions=EXTENSIONS):
+    """Return (name, command, endings that list it), or None if it is not there."""
+    verb = f"{CLASSES}\\{progid}\\shell\\open"
+    script = (
+        "$hkcu = [Microsoft.Win32.Registry]::CurrentUser\n"
+        f"$k = $hkcu.OpenSubKey({_ps_literal(verb)})\n"
+        "if ($k) {\n"
+        "  Write-Output $k.GetValue('FriendlyAppName')\n"
+        "  Write-Output $k.OpenSubKey('command').GetValue('')\n"
+        f"  foreach ($ext in {_ps_array(extensions)}) {{\n"
+        f"    $o = $hkcu.OpenSubKey({_ps_literal(CLASSES)} + '\\' + $ext + '\\OpenWithProgids')\n"
+        f"    if ($o -and ($o.GetValueNames() -contains {_ps_literal(progid)})) {{ Write-Output $ext }}\n"
+        "  }\n"
+        "}\n"
+    )
+    lines = _powershell(script).splitlines()
+    return (lines[0], lines[1], lines[2:]) if len(lines) >= 2 else None

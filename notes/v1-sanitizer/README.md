@@ -67,6 +67,31 @@ The user downloads free ebooks and worries they carry malware. They chose a clea
 - Learned: wsl.exe keeps quote marks in a `-d` value, so the distro name must stay unquoted. The code accepts only `[A-Za-z0-9._-]` names.
 - Not automated: a real right-click in File Explorer. The user checks this by hand.
 
+## Open with entry (added 2026-11-10)
+
+The user asked for a simpler right-click than Show more options → Send to. `install-menu` now also adds **Open with → pdf-sanitizer**; Send to stays for many files at once.
+
+Research:
+- Windows 11 shows registry verbs only under "Show more options". An item on the new menu itself needs IExplorerCommand plus package identity (a signed sparse package). Too heavy for this tool. Sources: https://blogs.windows.com/windowsdeveloper/2021/07/19/extending-the-context-menu-and-share-dialog-in-windows-11/ and https://learn.microsoft.com/en-us/windows/apps/desktop/modernize/integrate-packaged-app-with-file-explorer
+- "Open with" is on the new menu already. An app joins its list through the ending's `OpenWithProgids` key, value = ProgID, empty REG_SZ: https://learn.microsoft.com/en-us/windows/win32/shell/how-to-include-an-application-on-the-open-with-dialog-box
+- Several files at once: a forum report says the new menu hides Open with when 2+ files are selected (https://learn.microsoft.com/en-us/answers/questions/3862218/where-is-open-with-in-the-explorer-context-menu). Legacy verbs default to one process per file, up to 15 (https://learn.microsoft.com/en-us/windows/win32/shell/how-to-employ-the-verb-selection-model). The entry sets `MultiSelectModel=Single`; Send to handles batches in one window.
+
+What it writes (HKCU only):
+- `Software\Classes\PdfSanitizer.Document\shell\open`: `FriendlyAppName=pdf-sanitizer`, `MultiSelectModel=Single`; `command` = `"C:\Windows\System32\wsl.exe" --cd ~ -d <distro> -e "<repo>/pdf-sanitizer" --from-windows --pause "%1"`.
+- `Software\Classes\<ending>\OpenWithProgids\PdfSanitizer.Document` for .pdf .epub .mobi .fb2 .cbz.
+- `...\CurrentVersion\ApplicationAssociationToasts\PdfSanitizer.Document_<ending> = 0`.
+- `remove-menu` deletes only these. A test checks that another app's value under the same ending stays.
+
+Measured on this PC:
+- Without `FriendlyAppName` the menu shows "Windows Subsystem for Linux" (the name of wsl.exe). `FriendlyAppName` on `shell\open` works. `Application\ApplicationName` also worked; the ProgID's default value did not. Checked with SHAssocEnumHandlers, the API behind the Open with list.
+- The default PDF app stays Chrome after install (AssocQueryString before and after).
+- `.epub`, `.mobi`, `.fb2` and `.cbz` had no app on this PC. After install, AssocQueryString resolves them to pdf-sanitizer, so a double-click probably makes a safe copy. Kept on purpose and stated in the README and the install message. If the user dislikes it: register Open with for .pdf only.
+- Tests: the Open with launch test runs five hostile names through ShellExecuteEx with the ProgID (the same "%1" filling that Explorer does). A copy with the quotes around `%1` removed fails it.
+
+Inference, not documented: the `ApplicationAssociationToasts` value stops Windows from asking "How do you want to open this file?" about the new app. Basis: Chrome, Edge and other apps on this PC have the same `<ProgID>_<ending> = 0` values. The user can confirm: double-click a PDF after install; it should open in Chrome with no question.
+
+Not automated: a real right-click → Open with in File Explorer. The user checks this by hand.
+
 ## EPUB test by a helper agent (2026-11-10)
 
 | Book (Gutenberg id) | Original | Pages (tool / MuPDF) | Time | Safe copy |

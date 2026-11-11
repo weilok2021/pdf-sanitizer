@@ -3,8 +3,10 @@
     pdf-sanitizer setup            build the sandbox (needs internet once)
     pdf-sanitizer check FILE...    say what each file really is; opens nothing
     pdf-sanitizer FILE...          make a safe PDF copy of each document
-    pdf-sanitizer install-menu     add "Send to > Sanitize document" to Windows
-    pdf-sanitizer remove-menu      remove it again
+    pdf-sanitizer install-menu     add the right-click entries to Windows:
+                                   "Open with > pdf-sanitizer" and
+                                   "Send to > Sanitize document"
+    pdf-sanitizer remove-menu      remove them again
 """
 
 import argparse
@@ -24,9 +26,10 @@ usage:
   pdf-sanitizer setup              build the sandbox (needs internet once)
   pdf-sanitizer check FILE...      say what each file really is; opens nothing
   pdf-sanitizer [options] FILE...  make a safe PDF copy of each document
-  pdf-sanitizer install-menu       add "Send to > Sanitize document" to the
+  pdf-sanitizer install-menu       add "Open with > pdf-sanitizer" and
+                                   "Send to > Sanitize document" to the
                                    Windows right-click menu
-  pdf-sanitizer remove-menu        remove it again
+  pdf-sanitizer remove-menu        remove them again
 
 options:
   -o, --out-dir DIR   where to save the safe copies (default: next to each document)
@@ -36,7 +39,7 @@ options:
   --timeout SECONDS   stop when nothing happens for this long (default: 300)
   --force             replace a safe copy that already exists
 
-The menu entry adds --from-windows (the files are Windows paths) and
+The menu entries add --from-windows (the files are Windows paths) and
 --pause (keep the window open until you press Enter).
 """
 
@@ -197,16 +200,22 @@ def cmd_install_menu():
         _say("The right-click menu needs Windows with WSL, and this is not WSL.")
         return 1
     entry = Path(__file__).resolve().parent.parent / "pdf-sanitizer"
+    distro = os.environ["WSL_DISTRO_NAME"]
     try:
-        path = windows.install_shortcut(entry, os.environ["WSL_DISTRO_NAME"])
+        windows.install_open_with(entry, distro)
+        windows.install_shortcut(entry, distro)
     except windows.IntegrationError as e:
-        _say(f"Could not add the menu entry: {e}")
+        _say(f"Could not add the menu entries: {e}")
         return 1
-    _say("Added. In File Explorer, right-click a file, then choose")
+    endings = ", ".join(windows.EXTENSIONS)
+    _say("Added. In File Explorer, right-click a document, then choose:")
+    _say(f"  Open with > {windows.APP_NAME}")
+    _say(f"    for one file ({endings})")
     _say("  Send to > Sanitize document")
-    _say("On Windows 11, Send to is under 'Show more options' (or hold Shift while you right-click).")
-    _say("Docker Desktop must be running when you use it.")
-    _say(f"Shortcut: {safe(path)}")
+    _say("    for many files at once; on Windows 11 it is under 'Show more options'")
+    _say("Your default app for opening PDFs does not change.")
+    _say("If no other app opens an ebook ending, double-clicking such a file now makes a safe copy.")
+    _say("Docker Desktop must be running when you use them.")
     return 0
 
 
@@ -215,11 +224,17 @@ def cmd_remove_menu():
         _say("The right-click menu needs Windows with WSL, and this is not WSL.")
         return 1
     try:
+        had_open_with = windows.remove_open_with()
         path = windows.remove_shortcut()
     except windows.IntegrationError as e:
-        _say(f"Could not remove the menu entry: {e}")
+        _say(f"Could not remove the menu entries: {e}")
         return 1
-    _say(f"Removed {safe(path)}" if path else "The menu entry was not there.")
+    if had_open_with:
+        _say(f"Removed Open with > {windows.APP_NAME}")
+    if path:
+        _say("Removed Send to > Sanitize document")
+    if not (had_open_with or path):
+        _say("The menu entries were not there.")
     return 0
 
 
