@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from pdf_sanitizer import cli, sandbox
@@ -34,6 +35,32 @@ class OptionTest(unittest.TestCase):
 
     def test_installed_language_is_accepted(self):
         self.assertEqual(cli._parse_sanitize(["--lang", "eng", "book.pdf"]).lang, "eng")
+
+
+class ReportTest(unittest.TestCase):
+    def report(self, path):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            cli._report("shown", cli.filetype.inspect(path))
+        return stdout.getvalue()
+
+    def test_names_inside_a_zip_cannot_redraw_the_terminal(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = os.path.join(work, "evil.zip")
+            with zipfile.ZipFile(path, "w") as zf:
+                zf.writestr("readme\x1b[2K\x1b[1A\x1b[32mSafe copy: ok.txt", "x")
+            output = self.report(path)
+        self.assertIn("readme", output)
+        self.assertNotIn("\x1b", output)
+
+    def test_direction_controls_in_warnings_are_shown_escaped(self):
+        with tempfile.TemporaryDirectory() as work:
+            path = os.path.join(work, "book.pdf.\u202efdp")  # warns: "Double ending"
+            with open(path, "wb") as f:
+                f.write(b"MZ" + b"\0" * 200)
+            output = self.report(path)
+        self.assertNotIn("‮", output)
+        self.assertIn("\\u202e", output)
 
 
 class FakeTerminal(io.StringIO):
@@ -86,6 +113,14 @@ class BatchTest(unittest.TestCase):
         self.assertNotIn("Traceback", output)
         self.assertEqual(output.count("Failed: could not write the safe copy"), 2)
         self.assertIn("0 of 2 sanitized.", output)
+
+    def test_long_name_is_sanitized(self):
+        # 246 characters plus ".pdf" is a valid name. The temporary file once
+        # added the name again and went over the 255 limit.
+        stem = "x" * 246
+        code, output = self.run_tool(self.book(f"{stem}.pdf"))
+        self.assertEqual(code, 0, output)
+        self.assertTrue((self.dir / f"{stem}.safe.pdf").exists())
 
     def test_names_that_differ_only_in_case_do_not_overwrite_each_other(self):
         # On /mnt/c, Book.safe.pdf and book.safe.pdf are the same file.

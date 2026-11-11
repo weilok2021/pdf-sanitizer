@@ -60,9 +60,15 @@ def to_windows_path(path):
     return result.stdout.rstrip("\n")
 
 
+# PowerShell reads all of these as a single quote mark.
+PS_QUOTES = ("'", "\u2018", "\u2019", "\u201a", "\u201b")
+
+
 def _ps_literal(text):
-    """A PowerShell single-quoted string. Only the quote itself needs escaping."""
-    return "'" + text.replace("'", "''") + "'"
+    """A PowerShell single-quoted string. Only quote marks need escaping: doubled."""
+    for quote in PS_QUOTES:
+        text = text.replace(quote, quote * 2)
+    return "'" + text + "'"
 
 
 def _powershell(script, timeout=60):

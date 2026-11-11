@@ -72,11 +72,15 @@ def _say(line=""):
 
 
 def _report(shown, verdict):
-    """shown: the file's name, already made safe to print."""
-    _say(f"{shown}: {verdict.what}")
+    """shown: the file's name, already made safe to print.
+
+    The reason and warnings can quote parts of the name or names inside a
+    ZIP file, which an attacker chose. They go through safe() too.
+    """
+    _say(f"{shown}: {safe(verdict.what)}")
     for warning in verdict.warnings:
-        _say(f"  warning: {warning}")
-    _say(f"  {verdict.reason}")
+        _say(f"  warning: {safe(warning)}")
+    _say(f"  {safe(verdict.reason)}")
 
 
 def cmd_check(paths):
@@ -151,7 +155,8 @@ def _sanitize_one(path, args, made):
         _say(f"  Skipped: {_shown(final, args)} already exists. Use --force to replace it.")
         return False
 
-    part = out_dir / f".{src.stem}.{secrets.token_hex(4)}.part"
+    # A short name: the document's own name can already be near the 255 limit.
+    part = out_dir / f".pdf-sanitizer-{secrets.token_hex(4)}.part"
     progress = _Progress()
     started = time.monotonic()
     try:

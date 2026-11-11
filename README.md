@@ -116,7 +116,8 @@ How it works:
 
 ## What it protects against
 
-- **A program disguised as a document.** The file-type check refuses it before anything opens it. The check also flags double endings (`.pdf.exe`), padded names, and hidden direction characters that fake an ending.
+- **A program disguised as a document.** The file-type check refuses it before anything opens it. It also refuses any file whose real ending makes Windows run it (`.cmd`, `.js`, `.hta`, ...) or open it in a browser (`.html`, `.svg`, ...), even when its content looks like a document. The check also flags double endings (`.pdf.exe`), padded names, and hidden direction characters that fake an ending.
+- **A crafted name that fakes the tool's messages.** Every name the tool prints, including names inside a ZIP file, is escaped, so terminal codes and direction characters show as plain text.
 - **A booby-trapped PDF or EPUB.** It can only attack the reader inside the sandbox. That reader has no network and cannot see your files. Only pixels come out, and the host checks every page size.
 - **Scripts, links, attachments, forms and auto-run actions.** None of them survive. The tests prove it on a PDF and an EPUB that carry all of these.
 - **A stuck or hijacked reader.** The host stops the containers when nothing happens for the timeout, and rejects malformed page data.

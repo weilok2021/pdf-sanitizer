@@ -22,3 +22,22 @@ Tests added: `tests/test_cli.py` (new) and `HostFileErrorTest` plus `test_out_of
 Loose ends:
 - Finding 5 and the memory use in finding 8 stay as documented limits.
 - The PR needs a review in a fresh session before merging.
+
+## Security review findings (same branch, 2026-11-11)
+
+A security review in a fresh session read `main` and reported 5 findings. All checked here.
+
+| # | Finding | Check | Fix |
+|---|---|---|---|
+| 1 | `invoice.cmd` holding `REM %PDF-1.7` passed as a "Real document"; `.hta` too, via the PDF or FB2 marker | Reproduced. Cause: `%PDF-` may sit anywhere in the first 1 KiB, and the outer ending was only compared for ZIP entries. | The file's own ending is checked before its content: `RISKY_ENDINGS` and `.js` are refused as programs, `.html .htm .xhtml .mht .mhtml .svg` as web pages. `.js` and `.xhtml` are not in the ZIP entry list, because EPUBs hold them. |
+| 2 | ZIP entry names and name parts reached the terminal unescaped | Reproduced (raw ESC in the "contains:" list). | `_report` runs `what`, `reason` and every warning through `safe()`. |
+| 3 | A long name stopped the batch | Already fixed on this branch by the OSError catch. | The `.part` name no longer repeats the document's name, so a 246-character name now works. |
+| 4 | No total time or CPU cap | Right; only the user's own machine, and Ctrl+C stops it. | Not fixed. Loose end. |
+| 5 | Defence in depth: no check of the final PDF, runc not gVisor, `_ps_literal` missed curly quotes, missing endings | `_ps_literal`: a test showed `’` ended the string and ran a second command. Only fixed strings and the install path reach it, never a downloaded name. | `_ps_literal` doubles all five PowerShell quote marks. Added `.msc .appref-ms .settingcontent-ms .sct .wsc .scf .inf .cab` to `RISKY_ENDINGS`. gVisor and an output check stay loose ends. |
+
+All new tests fail on 19cd855 (before these fixes) and pass after.
+
+Loose ends from the security review:
+- A total time cap per document, and `--cpus` on the containers.
+- gVisor (`--runtime=runsc`) as a second wall around both stages.
+- No check of the final PDF beyond `%PDF-`.
