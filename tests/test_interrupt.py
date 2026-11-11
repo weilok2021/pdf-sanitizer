@@ -21,12 +21,17 @@ ROOT = Path(__file__).resolve().parent.parent
 READY = sandbox.docker_available() and sandbox.image_exists(sandbox.image_tag())
 
 
-def sandbox_containers():
+def sandbox_containers(pid):
+    """The sandbox containers of one pdf-sanitizer process.
+
+    Other runs (another test, a real run in a second window) are left out:
+    container names carry the process id.
+    """
     result = subprocess.run(
         ["docker", "ps", "-a", "--filter", "name=pdf-sanitizer-", "--format", "{{.Names}}"],
         capture_output=True, text=True,
     )
-    return result.stdout.split()
+    return [name for name in result.stdout.split() if f"-{pid}-" in name]
 
 
 @unittest.skipUnless(READY, "needs Docker and a built sandbox: run ./pdf-sanitizer setup")
@@ -43,9 +48,9 @@ class InterruptTest(unittest.TestCase):
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True,
             )
             deadline = time.monotonic() + 60
-            while len(sandbox_containers()) < 2 and time.monotonic() < deadline:
+            while len(sandbox_containers(proc.pid)) < 2 and time.monotonic() < deadline:
                 time.sleep(0.5)
-            self.assertEqual(len(sandbox_containers()), 2, "the sandboxes never started")
+            self.assertEqual(len(sandbox_containers(proc.pid)), 2, "the sandboxes never started")
             time.sleep(3)  # let pixels pile up in the pipes, as in the real bug
 
             os.killpg(proc.pid, signal.SIGINT)
@@ -60,7 +65,7 @@ class InterruptTest(unittest.TestCase):
             self.assertNotIn(b"Traceback", output)
             self.assertEqual(os.listdir(out_dir), [])
             time.sleep(2)
-            self.assertEqual(sandbox_containers(), [])
+            self.assertEqual(sandbox_containers(proc.pid), [])
 
 
 if __name__ == "__main__":

@@ -68,8 +68,8 @@ Your Windows Downloads folder is at `/mnt/c/Users/<your Windows name>/Downloads`
 | `-o DIR`, `--out-dir DIR` | Save the safe copies in DIR. Default: next to each file. |
 | `--dpi N` | Picture sharpness, 72 to 300. Default 150. Higher is sharper, bigger and slower. |
 | `--no-ocr` | Skip OCR. About 5 times faster, but the text is not searchable. |
-| `--lang CODE` | OCR language. Default `eng`. Only English is installed for now. |
-| `--timeout SECONDS` | Stop when nothing happens for this long. Default 300. |
+| `--lang CODE` | OCR language. Default `eng`. Only English is installed for now; other codes are refused at the start. |
+| `--timeout SECONDS` | Stop when nothing happens for this long. Default 300. Opening a very large EPUB can take a while before the first page, so keep it well above a minute. |
 | `--force` | Replace a safe copy that already exists. |
 
 ## Right-click menu (Windows)
@@ -127,6 +127,8 @@ How it works:
 - A bug in Docker or in the Linux kernel could let an attack escape the container. Dangerzone adds a second sandbox (gVisor) for this. pdf-sanitizer does not have it yet.
 - The original stays on your disk. Delete it once you have checked the copy.
 - The copy loses text reflow, clickable links and the table of contents. It is also bigger than the original.
+- A page picture is at most 10,000 pixels on its longest side. A page longer than that at your `--dpi` (for example an A0 poster at `--dpi 300`, or a 1.7 m banner at the default 150) is drawn at a lower sharpness, and its page in the copy comes out smaller than the original. Nothing on it is lost.
+- The rebuild sandbox holds the whole copy in memory, with a 2 GB limit. A very large copy (several hundred MB, such as a long colour comic) fails with a message that says it ran out of memory.
 
 ## What changes in the copy
 
