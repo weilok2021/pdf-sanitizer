@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="pdf-sanitizer logo">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1e293b"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <path d="M38 20 H76 L96 40 V100 a6 6 0 0 1 -6 6 H38 a6 6 0 0 1 -6 -6 V26 a6 6 0 0 1 6 -6 Z" fill="#ffffff"/>
+  <path d="M76 20 V35 a5 5 0 0 0 5 5 H96 Z" fill="#cbd5e1"/>
+  <rect x="44" y="50" width="38" height="6" rx="3" fill="#94a3b8"/>
+  <rect x="44" y="63" width="30" height="6" rx="3" fill="#94a3b8"/>
+  <rect x="44" y="76" width="20" height="6" rx="3" fill="#94a3b8"/>
+  <circle cx="90" cy="94" r="21" fill="#22c55e" stroke="#1e293b" stroke-width="6"/>
+  <path d="M80 94 l7 7 l13 -14" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

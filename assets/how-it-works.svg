@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 290" width="960" height="290" role="img" aria-label="How pdf-sanitizer works: your document is opened in a sealed box, every page becomes a picture, and a safe PDF comes out">
+  <style>
+    .t { font: 700 19px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #0f172a; }
+    .s { font: 400 15px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #475569; }
+    .n { font: 700 13px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #ffffff; }
+  </style>
+  <rect x="1" y="1" width="958" height="288" rx="18" fill="#f8fafc" stroke="#e2e8f0" stroke-width="2"/>
+
+  <!-- arrows -->
+  <g fill="none" stroke="#94a3b8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M212 110 H268 M256 98 L268 110 L256 122"/>
+    <path d="M452 110 H508 M496 98 L508 110 L496 122"/>
+    <path d="M692 110 H748 M736 98 L748 110 L736 122"/>
+  </g>
+
+  <!-- 1: your document, might be risky -->
+  <g transform="translate(120 0)">
+    <path d="M-34 52 H12 L36 76 V160 a6 6 0 0 1 -6 6 H-34 a6 6 0 0 1 -6 -6 V58 a6 6 0 0 1 6 -6 Z" fill="#ffffff" stroke="#334155" stroke-width="3"/>
+    <path d="M12 52 V70 a6 6 0 0 0 6 6 H36" fill="none" stroke="#334155" stroke-width="3"/>
+    <rect x="-26" y="90" width="44" height="6" rx="3" fill="#cbd5e1"/>
+    <rect x="-26" y="104" width="36" height="6" rx="3" fill="#cbd5e1"/>
+    <rect x="-26" y="118" width="26" height="6" rx="3" fill="#cbd5e1"/>
+    <circle cx="32" cy="156" r="20" fill="#ef4444" stroke="#f8fafc" stroke-width="4"/>
+    <path d="M32 145 V159" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="32" cy="167" r="3" fill="#ffffff"/>
+  </g>
+  <text class="t" x="120" y="214" text-anchor="middle">Your document</text>
+  <text class="s" x="120" y="240" text-anchor="middle">a PDF or ebook that might hide</text>
+  <text class="s" x="120" y="260" text-anchor="middle">scripts, links or attachments</text>
+
+  <!-- 2: sealed box -->
+  <g transform="translate(360 0)">
+    <rect x="-52" y="58" width="104" height="104" rx="16" fill="#1e3a8a"/>
+    <rect x="-52" y="58" width="104" height="104" rx="16" fill="none" stroke="#3b82f6" stroke-width="3" stroke-dasharray="8 6"/>
+    <path d="M-14 104 V92 a14 14 0 0 1 28 0 V104" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+    <rect x="-24" y="102" width="48" height="38" rx="6" fill="#ffffff"/>
+    <circle cx="0" cy="118" r="5" fill="#1e3a8a"/>
+    <rect x="-2" y="118" width="4" height="12" rx="2" fill="#1e3a8a"/>
+  </g>
+  <text class="t" x="360" y="214" text-anchor="middle">Opened in a sealed box</text>
+  <text class="s" x="360" y="240" text-anchor="middle">no internet, and it can't</text>
+  <text class="s" x="360" y="260" text-anchor="middle">see your other files</text>
+
+  <!-- 3: pages become pictures -->
+  <g transform="translate(600 0)">
+    <rect x="-36" y="56" width="80" height="100" rx="8" fill="#e2e8f0" stroke="#94a3b8" stroke-width="3"/>
+    <rect x="-46" y="66" width="80" height="100" rx="8" fill="#ffffff" stroke="#334155" stroke-width="3"/>
+    <circle cx="-22" cy="92" r="9" fill="#f59e0b"/>
+    <path d="M-38 152 L-14 120 L2 138 L12 126 L28 152 Z" fill="#60a5fa"/>
+  </g>
+  <text class="t" x="600" y="214" text-anchor="middle">Pages become pictures</text>
+  <text class="s" x="600" y="240" text-anchor="middle">a picture can't carry</text>
+  <text class="s" x="600" y="260" text-anchor="middle">hidden code</text>
+
+  <!-- 4: safe pdf -->
+  <g transform="translate(840 0)">
+    <path d="M-34 52 H12 L36 76 V160 a6 6 0 0 1 -6 6 H-34 a6 6 0 0 1 -6 -6 V58 a6 6 0 0 1 6 -6 Z" fill="#ffffff" stroke="#334155" stroke-width="3"/>
+    <path d="M12 52 V70 a6 6 0 0 0 6 6 H36" fill="none" stroke="#334155" stroke-width="3"/>
+    <rect x="-26" y="90" width="44" height="6" rx="3" fill="#cbd5e1"/>
+    <rect x="-26" y="104" width="36" height="6" rx="3" fill="#cbd5e1"/>
+    <rect x="-26" y="118" width="26" height="6" rx="3" fill="#cbd5e1"/>
+    <circle cx="32" cy="156" r="20" fill="#22c55e" stroke="#f8fafc" stroke-width="4"/>
+    <path d="M23 156 l6 6 l11 -12" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text class="t" x="840" y="214" text-anchor="middle">A safe PDF</text>
+  <text class="s" x="840" y="240" text-anchor="middle">with the text made</text>
+  <text class="s" x="840" y="260" text-anchor="middle">searchable again</text>
+</svg>
