@@ -27,7 +27,7 @@ A crafted file name that fakes the tool's output. Every name the tool prints, in
 
 ## What it doesn't protect against
 
-A container escape. A bug in Docker or the Linux kernel could let an attack break out of container 1. Dangerzone runs gVisor inside its container as a second layer; pdf-sanitizer doesn't yet. On Docker Desktop for Windows, the containers share one VM kernel with your WSL distro, so an escape would reach it.
+A container escape. A bug in Docker or the Linux kernel could let an attack break out of container 1. There is no second layer, such as gVisor, yet. On Docker Desktop for Windows, the containers share one VM kernel with your WSL distro, so an escape would reach it.
 
 The original file. It stays on your disk. Delete it once you've checked the copy.
 

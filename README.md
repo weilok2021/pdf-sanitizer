@@ -1,12 +1,20 @@
-# pdf-sanitizer
+<p align="center">
+  <img src="assets/logo.svg" alt="pdf-sanitizer logo" width="112">
+</p>
 
-Turn a PDF or ebook you don't trust into a safe PDF.
+<h1 align="center">pdf-sanitizer</h1>
 
-pdf-sanitizer works like this. You give it a document you downloaded and aren't sure about: a PDF, EPUB, MOBI, FB2 or CBZ file. It opens the document inside a Docker container that has no network, no access to your files and no root, and draws every page as raw pixels. Outside that container, your machine checks the pixel data, and a second locked-down container turns the pixels back into a PDF and adds an OCR text layer so you can still search and copy text. Scripts, links, attachments and anything else that can hide in the original are left behind, because a picture of a page can't carry code.
+<p align="center">Turn a PDF or ebook you don't trust into a safe PDF you can open.</p>
 
-Before it opens anything, it reads the first bytes of the file to see what it really is. A program disguised as a document, such as `invoice.pdf.exe`, is refused.
+<p align="center">
+  <img src="assets/how-it-works.svg" alt="Your document is opened in a sealed box, every page becomes a picture, and a safe PDF comes out" width="820">
+</p>
 
-The design follows [Dangerzone](https://dangerzone.rocks/) from the Freedom of the Press Foundation, scaled down to a command-line tool for PDFs and ebooks. It copies no Dangerzone code. Read [docs/security.md](docs/security.md) for what it protects against and what it doesn't.
+Free ebooks and email attachments can hide scripts, links and attached programs that run when you open them. pdf-sanitizer opens the document for you inside a sealed Docker container with no internet and no access to your files. It draws every page as a picture, then builds a new PDF from those pictures and adds the text back with OCR, so you can still search and copy it. A picture of a page can't carry code, so nothing hidden in the original makes it into the copy.
+
+Before it opens anything, it checks what the file really is. A program dressed up as a document, such as `invoice.pdf.exe`, is refused.
+
+It reads PDF, EPUB, MOBI, FB2 and CBZ files. Read [docs/security.md](docs/security.md) for what it protects against and what it doesn't.
 
 ## Getting started
 
@@ -30,6 +38,10 @@ ln -s "$PWD/pdf-sanitizer" ~/.local/bin/pdf-sanitizer
 
 ## Usage
 
+<p align="center">
+  <img src="assets/terminal.svg" alt="pdf-sanitizer refuses invoice.pdf.exe as a program, then makes invoice.safe.pdf from invoice.pdf" width="680">
+</p>
+
 ```
 pdf-sanitizer check invoice.pdf       # say what the file really is; opens nothing
 pdf-sanitizer invoice.pdf             # writes invoice.safe.pdf next to it
@@ -50,7 +62,7 @@ PDF, EPUB and MOBI are tested on real files. FB2 and CBZ open in the same reader
 
 The safe copy is a stack of page pictures. You lose fillable form fields, digital signatures, clickable links, the table of contents and text reflow. The searchable text comes from OCR, so it can misread a character; check numbers against the picture before you copy them. Password-protected PDFs are refused.
 
-The sandbox is a Docker container and nothing more. A bug in Docker or the Linux kernel could let an attack escape it. Dangerzone adds gVisor as a second layer; pdf-sanitizer doesn't have that yet.
+The sealed box is a Docker container and nothing more. A bug in Docker or the Linux kernel could let an attack escape it. A second layer, such as gVisor, isn't there yet.
 
 ## Development
 
