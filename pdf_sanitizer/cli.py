@@ -35,7 +35,7 @@ options:
   -o, --out-dir DIR   where to save the safe copies (default: next to each document)
   --dpi N             picture sharpness, 72 to 300 (default: 150)
   --no-ocr            skip OCR; faster, but the text is not searchable
-  --lang CODE         OCR language (default: eng)
+  --lang CODE         OCR language (default: eng; only eng is installed)
   --timeout SECONDS   stop when nothing happens for this long (default: 300)
   --force             replace a safe copy that already exists
 
@@ -60,6 +60,10 @@ def _parse_sanitize(argv):
         parser.error("--dpi must be between 72 and 300")
     if args.timeout < 10:
         parser.error("--timeout must be at least 10 seconds")
+    try:
+        sandbox.check_language(args.lang)  # sanitize() checks again; this says it before any work
+    except sandbox.SanitizeError as e:
+        parser.error(f"--lang: {e}")
     return args
 
 
@@ -68,11 +72,15 @@ def _say(line=""):
 
 
 def _report(shown, verdict):
-    """shown: the file's name, already made safe to print."""
-    _say(f"{shown}: {verdict.what}")
+    """shown: the file's name, already made safe to print.
+
+    The reason and warnings can quote parts of the name or names inside a
+    ZIP file, which an attacker chose. They go through safe() too.
+    """
+    _say(f"{shown}: {safe(verdict.what)}")
     for warning in verdict.warnings:
-        _say(f"  warning: {warning}")
-    _say(f"  {verdict.reason}")
+        _say(f"  warning: {safe(warning)}")
+    _say(f"  {safe(verdict.reason)}")
 
 
 def cmd_check(paths):
@@ -107,14 +115,33 @@ def _shown(path, args):
     return safe(str(path))
 
 
-def _progress(number, total):
-    if sys.stderr.isatty():
-        end = "\n" if number == total else ""
-        print(f"\r  page {number}/{total}", end=end, file=sys.stderr, flush=True)
+class _Progress:
+    """The "page 3/80" line. It rewrites itself, so it has no line end until the last page."""
+
+    def __init__(self, stream=None):
+        self.stream = stream or sys.stderr
+        self.open = False
+
+    def page(self, number, total):
+        if self.stream.isatty():
+            self.open = number != total
+            print(f"\r  page {number}/{total}", end="" if self.open else "\n", file=self.stream, flush=True)
+
+    def end(self):
+        """End an unfinished line, so the next message starts on its own line."""
+        if self.open:
+            print(file=self.stream, flush=True)
+            self.open = False
+
+
+def _file_id(path):
+    """Which file a path really is: two names for one file give the same id."""
+    info = os.stat(path)
+    return info.st_dev, info.st_ino
 
 
 def _sanitize_one(path, args, made):
-    """Sanitize one document. `made` holds the safe copies this run has written."""
+    """Sanitize one document. `made` holds the file ids of the safe copies this run wrote."""
     verdict = filetype.inspect(path)
     _report(_shown(path, args), verdict)
     if not verdict.ok:
@@ -126,34 +153,50 @@ def _sanitize_one(path, args, made):
     src = Path(path)
     out_dir = Path(args.out_dir) if args.out_dir else src.parent
     final = out_dir / f"{src.stem}.safe.pdf"
-    if final in made:
+    # Ask the file system, not the name: in a Windows folder (/mnt/c),
+    # book.safe.pdf finds the Book.safe.pdf this run already made.
+    if final.exists() and _file_id(final) in made:
         _say(f"  Skipped: this run already made {_shown(final, args)} from another file with the same name.")
         return False
     if final.exists() and not args.force:
         _say(f"  Skipped: {_shown(final, args)} already exists. Use --force to replace it.")
         return False
 
-    part = out_dir / f".{src.stem}.{secrets.token_hex(4)}.part"
+    # A short name: the document's own name can already be near the 255 limit.
+    part = out_dir / f".pdf-sanitizer-{secrets.token_hex(4)}.part"
+    progress = _Progress()
     started = time.monotonic()
     try:
         with open(part, "xb") as out_file:
             outcome = sandbox.sanitize(
                 str(src), out_file, verdict.kind,
                 dpi=args.dpi, ocr=not args.no_ocr, language=args.lang,
-                timeout=args.timeout, on_page=_progress,
+                timeout=args.timeout, on_page=progress.page,
             )
         with open(part, "rb") as f:
             if f.read(5) != b"%PDF-":
                 raise sandbox.SanitizeError("The rebuild step did not produce a PDF.")
         os.replace(part, final)
     except sandbox.SanitizeError as e:
+        progress.end()
         _say(f"  Failed: {e}")
         return False
+    except OSError as e:
+        # For example a folder you cannot write to. The other files still run.
+        progress.end()
+        reason = safe(e.strerror or str(e))
+        if str(e.filename) in (str(part), str(final)):
+            _say(f"  Failed: could not write the safe copy: {reason}")
+        else:
+            _say(f"  Failed: {reason}")
+        return False
     finally:
-        if part.exists():
-            part.unlink()
+        try:
+            part.unlink(missing_ok=True)
+        except OSError:
+            pass
 
-    made.add(final)
+    made.add(_file_id(final))
     size_mb = final.stat().st_size / (1024 * 1024)
     seconds = time.monotonic() - started
     _say(f"  Safe copy: {_shown(final, args)} ({outcome.pages} pages, {size_mb:.1f} MB, {seconds:.0f} s)")

@@ -220,6 +220,12 @@ class WslTest(WindowsFolderTest):
                 self.assertEqual(Path(wsl), self.dir / name)
                 self.assertEqual(windows.to_windows_path(wsl).lower(), win.lower())
 
+    def test_powershell_literal_survives_every_quote_mark(self):
+        # PowerShell ends a single-quoted string at any of these marks.
+        for text in ("it's", "a‘b", "a’b", "a‚b", "a‛b", "x’; Write-Output PWNED; ’"):
+            with self.subTest(text=text):
+                self.assertEqual(windows._powershell(f"Write-Output {windows._ps_literal(text)}"), text)
+
     def test_shortcut_is_created_read_and_removed(self):
         entry = ROOT / "pdf-sanitizer"
         distro = os.environ["WSL_DISTRO_NAME"]

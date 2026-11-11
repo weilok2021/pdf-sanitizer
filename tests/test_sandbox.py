@@ -12,6 +12,7 @@ import os
 import secrets
 import subprocess
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -251,6 +252,67 @@ class CompromisedRendererTest(unittest.TestCase):
         self.assertIn("nothing happened", str(caught.exception))
         for name in names:
             self.assertFalse(container_exists(name), f"{name} is still running")
+
+    def test_out_of_memory_says_so(self):
+        code = "x = bytearray(3 * 1024 ** 3)"  # more than the 2 GB limit
+        with self.assertRaises(sandbox.SanitizeError) as caught:
+            self.run_with_renderer(code)
+        self.assertIn("ran out of memory", str(caught.exception))
+
+    def test_rebuild_out_of_memory_says_so(self):
+        # The rebuild stage dies while the host still sends it pixels.
+        fake = lambda dpi, ocr, language: ["python", "-I", "-c", "x = bytearray(3 * 1024 ** 3)"]  # noqa: E731
+        with mock.patch.object(sandbox, "rebuild_argv", fake), self.assertRaises(sandbox.SanitizeError) as caught:
+            sandbox.sanitize(self.book, io.BytesIO(), "pdf", timeout=120)
+        self.assertIn("ran out of memory", str(caught.exception))
+
+
+class LanguageTest(unittest.TestCase):
+    def test_sanitize_refuses_a_language_that_is_not_installed(self):
+        # Checked before any container starts, so no Docker is needed.
+        with self.assertRaises(sandbox.SanitizeError) as caught:
+            sandbox.sanitize("unused.pdf", io.BytesIO(), "pdf", language="eng+deu")
+        self.assertIn("deu is not installed", str(caught.exception))
+
+
+class DiskFull(io.BytesIO):
+    """An output file on a disk with room for only 1,000 bytes."""
+
+    def write(self, data):
+        if self.tell() + len(data) > 1000:
+            raise OSError(28, "No space left on device")
+        return super().write(data)
+
+
+@unittest.skipUnless(READY, SKIP_REASON)
+class HostFileErrorTest(unittest.TestCase):
+    """Errors on the host side are reported as they are, and quickly."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+
+    def sanitize(self, path, out):
+        started = time.monotonic()
+        with self.assertRaises(sandbox.SanitizeError) as caught:
+            sandbox.sanitize(path, out, "pdf", timeout=120)
+        self.assertLess(time.monotonic() - started, 60, "it waited for the timeout")
+        return str(caught.exception)
+
+    def test_full_disk_is_reported_for_short_and_long_documents(self):
+        # A short document once came back as a "success" with a cut-off file.
+        for name, data in (("short", fixtures.risky_pdf()), ("long", fixtures.long_pdf(20))):
+            with self.subTest(name):
+                path = os.path.join(self.dir.name, f"{name}.pdf")
+                with open(path, "wb") as f:
+                    f.write(data)
+                message = self.sanitize(path, DiskFull())
+                self.assertIn("Could not write the safe copy: No space left on device", message)
+
+    def test_unreadable_document_is_reported(self):
+        # A folder cannot be read as a file, like a document Windows has locked.
+        message = self.sanitize(self.dir.name, io.BytesIO())
+        self.assertIn("Could not read the document", message)
 
 
 if __name__ == "__main__":

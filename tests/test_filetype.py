@@ -101,6 +101,30 @@ class FileTypeTest(unittest.TestCase):
         self.assertFalse(verdict.ok)
         self.assertTrue(any("direction-control" in w for w in verdict.warnings))
 
+    def test_script_with_a_document_marker_fails_by_its_ending(self):
+        # Windows runs these on a double-click, whatever "%PDF-" a comment holds.
+        samples = {
+            "invoice.cmd": b"REM %PDF-1.7\r\ncalc.exe\r\n",
+            "page.hta": b"<!-- %PDF-1.4 --><script>alert(1)</script>",
+            "book.hta": b"<!-- <FictionBook> --><script>alert(1)</script>",
+            "run.js": b"// %PDF-1.4\nWScript.Echo(1)",
+            "x.settingcontent-ms": b"<!-- %PDF-1.4 -->",
+            "book.pdf.vbs": b"' %PDF-1.4\n",
+            "trailing.cmd. ": b"REM %PDF-1.7\r\n",
+        }
+        for name, data in samples.items():
+            with self.subTest(name=name):
+                verdict = filetype.inspect(self.make(name, data))
+                self.assertFalse(verdict.ok)
+                self.assertIn("runs as a program", verdict.what)
+
+    def test_web_page_with_a_document_marker_fails_by_its_ending(self):
+        for name in ("page.html", "page.htm", "page.svg", "page.mht"):
+            with self.subTest(name=name):
+                verdict = filetype.inspect(self.make(name, b"<!-- %PDF-1.4 --><script>alert(1)</script>"))
+                self.assertFalse(verdict.ok)
+                self.assertIn("web page", verdict.what)
+
     def test_other_programs_fail(self):
         samples = {
             "a.pdf": b"\x7fELF" + b"\0" * 60,

@@ -9,6 +9,7 @@ through stdout. Nothing else crosses the boundary.
 """
 
 import hashlib
+import os
 import secrets
 import subprocess
 import threading
@@ -17,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import protocol
-from .text import safe_log
+from .text import safe, safe_log
 
 ROOT = Path(__file__).resolve().parent.parent
 IMAGE_REPO = "pdf-sanitizer-sandbox"
@@ -30,6 +31,10 @@ IMAGE_FILES = (
 )
 MEMORY = "2g"
 PIDS = "128"
+# OCR languages the image installs. Keep in step with the Dockerfile.
+OCR_LANGUAGES = ("eng",)
+# A container killed with SIGKILL exits with 137. Docker's memory limit does that.
+KILLED = 137
 CHUNK = 1024 * 1024
 STDERR_CAP = 64 * 1024
 
@@ -102,7 +107,8 @@ class Stage:
     """One running sandbox container."""
 
     def __init__(self, label, tag, argv):
-        self.name = f"pdf-sanitizer-{label}-{secrets.token_hex(6)}"
+        # The process id lets tests and `docker ps` tell runs apart.
+        self.name = f"pdf-sanitizer-{label}-{os.getpid()}-{secrets.token_hex(6)}"
         self.proc = subprocess.Popen(
             sandbox_command(self.name, tag, argv),
             stdin=subprocess.PIPE,
@@ -220,27 +226,65 @@ def relay(src, dst, on_page=None, touch=None):
     return Outcome(pages, blank_pages)
 
 
-def _feed(path, stage, watchdog):
+def _feed(path, stage, watchdog, failures, stop):
+    """Send the document to the render stage.
+
+    If the document cannot be read to the end, stop everything: a cut-off
+    document could still render, and the copy would miss pages.
+    """
     try:
         with open(path, "rb") as f:
             for chunk in iter(lambda: f.read(CHUNK), b""):
-                stage.proc.stdin.write(chunk)
+                try:
+                    stage.proc.stdin.write(chunk)
+                except (OSError, ValueError):
+                    return  # the stage stopped reading; its exit code tells the story
                 watchdog.touch()
-        stage.proc.stdin.close()
-    except (BrokenPipeError, OSError, ValueError):
-        pass  # the stage stopped reading; its exit code tells the story
+    except OSError as e:
+        failures.append(f"Could not read the document: {safe(e.strerror or str(e))}")
+        stop()
+    finally:
+        try:
+            stage.proc.stdin.close()
+        except (OSError, ValueError):
+            pass
 
 
-def _sink(stage, out_file, watchdog):
+def _sink(stage, out_file, watchdog, failures, stop):
+    """Write the finished PDF. If writing fails (a full disk), stop everything."""
     for chunk in iter(lambda: stage.proc.stdout.read1(CHUNK), b""):
-        out_file.write(chunk)
+        try:
+            out_file.write(chunk)
+        except OSError as e:
+            failures.append(f"Could not write the safe copy: {safe(e.strerror or str(e))}")
+            stop()
+            return
         watchdog.touch()
 
 
-def _explain(stage, what):
+def _failed(stage, what, code=None):
+    """The error for a stage that failed: its own last words, or a memory stop."""
+    if code == KILLED:
+        return SanitizeError(f"{what} It was stopped, most likely because it ran out of memory (the limit is {MEMORY.upper()}B).")
     lines = stage.stderr_lines()
     detail = ("\n    " + "\n    ".join(lines)) if lines else ""
-    return f"{what}{detail}"
+    return SanitizeError(f"{what}{detail}")
+
+
+def _exit_code(stage, seconds=10):
+    """Wait a little for a stage to end by itself. None if it is still running."""
+    try:
+        return stage.proc.wait(timeout=seconds)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def check_language(language):
+    """Raise SanitizeError unless every OCR language in it (eng+deu) is installed."""
+    missing = [code for code in language.split("+") if code not in OCR_LANGUAGES]
+    if missing:
+        installed = ", ".join(OCR_LANGUAGES)
+        raise SanitizeError(f"{safe(missing[0])} is not installed in the sandbox (installed: {installed})")
 
 
 def render_argv(kind, dpi):
@@ -256,6 +300,8 @@ def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeou
 
     Return an Outcome. Raise SanitizeError on any failure.
     """
+    if ocr:
+        check_language(language)
     tag = image_tag()
     render = Stage("render", tag, render_argv(kind, dpi))
     rebuild = Stage("rebuild", tag, rebuild_argv(dpi, ocr, language))
@@ -265,9 +311,19 @@ def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeou
         for stage in stages:
             stage.kill()
 
+    # A read or write failure stops both stages. Its message beats the
+    # "malformed data" or "stopped early" that the stopped stages cause.
+    failures = []
+
+    def check_failures():
+        if failures:
+            raise SanitizeError(failures[0])
+        if watchdog.fired:
+            raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.")
+
     watchdog = Watchdog(timeout, kill_all)
-    feeder = threading.Thread(target=_feed, args=(src_path, render, watchdog), daemon=True)
-    sink = threading.Thread(target=_sink, args=(rebuild, out_file, watchdog), daemon=True)
+    feeder = threading.Thread(target=_feed, args=(src_path, render, watchdog, failures, kill_all), daemon=True)
+    sink = threading.Thread(target=_sink, args=(rebuild, out_file, watchdog, failures, kill_all), daemon=True)
     feeder.start()
     sink.start()
 
@@ -276,36 +332,33 @@ def sanitize(src_path, out_file, kind, dpi=150, ocr=True, language="eng", timeou
             outcome = relay(render.proc.stdout, rebuild.proc.stdin, on_page, watchdog.touch)
             rebuild.proc.stdin.close()
         except protocol.StreamError as e:
-            if watchdog.fired:
-                kill_all()
-                raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.") from None
+            check_failures()
             # A render stage that gave up on its own exits with an error code.
-            # Wait for it before killing, so its message is not lost.
-            try:
-                render_code = render.proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                render_code = None
+            # Read it before killing: a kill would hide it behind code 137.
+            render_code = _exit_code(render)
             kill_all()
             if render_code not in (0, None):
-                raise SanitizeError(_explain(render, "The sandbox could not open the document.")) from None
+                raise _failed(render, "The sandbox could not open the document.", render_code) from None
             raise SanitizeError(
                 f"The sandbox sent malformed page data ({e}). The file may be malicious. Delete it."
             ) from None
         except (BrokenPipeError, OSError):
+            # The rebuild stage stopped reading, for example because it ran
+            # out of memory. Read its exit code before killing, as above.
+            check_failures()
+            rebuild_code = _exit_code(rebuild)
             kill_all()
-            if watchdog.fired:
-                raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.") from None
-            raise SanitizeError(_explain(rebuild, "The rebuild step stopped early.")) from None
+            raise _failed(rebuild, "The rebuild step stopped early.", rebuild_code) from None
 
         render_code = render.wait(timeout=60)
         rebuild_code = rebuild.wait()
         sink.join()
-        if watchdog.fired:
-            raise SanitizeError(f"Stopped: nothing happened for {timeout} seconds.")
+        feeder.join()
+        check_failures()
         if render_code != 0:
-            raise SanitizeError(_explain(render, "The sandbox could not open the document."))
+            raise _failed(render, "The sandbox could not open the document.", render_code)
         if rebuild_code != 0:
-            raise SanitizeError(_explain(rebuild, "The rebuild step failed."))
+            raise _failed(rebuild, "The rebuild step failed.", rebuild_code)
         if outcome.blank_pages == outcome.pages:
             raise SanitizeError(
                 "Every page came out blank, so the sandbox could not really read this document."

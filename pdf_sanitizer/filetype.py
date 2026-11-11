@@ -24,7 +24,14 @@ RISKY_ENDINGS = {
     ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe", ".jse", ".wsf", ".wsh",
     ".hta", ".jar", ".lnk", ".url", ".library-ms", ".searchconnector-ms",
     ".reg", ".iso", ".img", ".vhd", ".vhdx", ".appx", ".msix", ".chm",
+    ".msc", ".appref-ms", ".settingcontent-ms", ".sct", ".wsc", ".scf", ".inf", ".cab",
 }
+
+# Endings Windows hands to Windows Script Host or a web browser on a
+# double-click. Checked on the file's own name only: an EPUB holds .js and
+# .xhtml files as a normal part of the book.
+SCRIPT_ENDINGS = {".js"}
+WEB_ENDINGS = {".html", ".htm", ".xhtml", ".mht", ".mhtml", ".svg"}
 
 # The ending a user expects to see on a document.
 BOOK_ENDINGS = {".pdf", ".epub", ".mobi", ".azw", ".azw3", ".fb2", ".cbz", ".djvu", ".txt"}
@@ -201,6 +208,22 @@ def inspect(path):
     archive = _archive_kind(head)
     if archive:
         return _reject(archive, "It is an archive or disk image, not a document.", warnings)
+
+    # Windows goes by the ending, not the content. A script that also holds
+    # "%PDF-" in a comment is still a script when double-clicked.
+    ending = _ending(name)
+    if ending in RISKY_ENDINGS or ending in SCRIPT_ENDINGS:
+        return _reject(
+            f"file that Windows runs as a program ({ending})",
+            "Its content may look like a document, but a double-click would run it. Do not open it. Delete it.",
+            warnings,
+        )
+    if ending in WEB_ENDINGS:
+        return _reject(
+            f"file that Windows opens as a web page ({ending})",
+            "A double-click would open it in your browser, where it can run scripts.",
+            warnings,
+        )
 
     # ZIP comes before PDF: a ZIP that stores a PDF uncompressed also has
     # "%PDF-" near its start, and must not pass as a plain PDF.
