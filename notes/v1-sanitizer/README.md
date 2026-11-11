@@ -43,7 +43,7 @@ The user downloads free ebooks and worries they carry malware. They chose a clea
 - **No gVisor layer yet.** Dangerzone runs gVisor inside its container. Note that Docker Desktop on WSL shares one VM kernel with the user's WSL distro, so a kernel escape would reach it.
 - **The copy has no table of contents.** Option: pass the bookmarks out of sandbox 1 as checked plain text.
 - **OCR is English only.** Add `tesseract-ocr-chi-sim` and similar if the user reads other languages.
-- **PyMuPDF is AGPL-3.0.** Pick a licence before publishing.
+- **PyMuPDF is AGPL-3.0.** Decided 2026-11-11: the project is AGPL-3.0 too, published as a public repo at github.com/weilok2021/pdf-sanitizer.
 - **The image is 623 MB.**
 - **Not done:** the `~/.local/bin` symlink (the user can add it; see the README).
 

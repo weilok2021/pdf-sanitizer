@@ -35,17 +35,20 @@ You need:
 - Python 3.10 or newer. Nothing to install with pip: the host side uses the standard library only.
 
 ```
-cd ~/workspace/pdf-sanitizer
+git clone https://github.com/weilok2021/pdf-sanitizer.git
+cd pdf-sanitizer
 ./pdf-sanitizer setup
 ```
 
 `setup` builds the sandbox image. It is the only step that uses the internet.
 
-To type `pdf-sanitizer` from any folder:
+On Windows, run these inside WSL (for example Ubuntu), with Docker Desktop's WSL integration turned on.
+
+To type `pdf-sanitizer` from any folder (run this inside the `pdf-sanitizer` folder):
 
 ```
 mkdir -p ~/.local/bin
-ln -s ~/workspace/pdf-sanitizer/pdf-sanitizer ~/.local/bin/pdf-sanitizer
+ln -s "$PWD/pdf-sanitizer" ~/.local/bin/pdf-sanitizer
 ```
 
 ## Use
@@ -173,4 +176,4 @@ The tests in `tests/test_sandbox.py` need Docker and a built sandbox. They check
 
 ## Licence
 
-PyMuPDF, which runs inside the sandbox, is licensed under AGPL-3.0. Keep that in mind before you publish or share this project.
+[AGPL-3.0](LICENSE). PyMuPDF, which runs inside the sandbox, uses the same licence.
